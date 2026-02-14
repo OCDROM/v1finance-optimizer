@@ -163,7 +163,7 @@ salary_labels = unique_labels
 
 
 # Target Expenses Needed per Month (pill style)
-st.markdown("<span class='custom-label'>Target Monthly Expenses <span class='custom-info' title='Adjust your target monthly expenses to see how it affects your FI age.'>i</span></span>", unsafe_allow_html=True)
+st.markdown("<span class='custom-label'>Target Monthly Expenses <span class='custom-info' title='This is how much you expect to spend per month to enjoy your desired lifestyle after reaching financial independence.'>i</span></span>", unsafe_allow_html=True)
 target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="targetspend_main", label_visibility="collapsed")
 
 # Target spending: center row is input, increments of 500 up/down, floor 500, remove bottom 5 rows
