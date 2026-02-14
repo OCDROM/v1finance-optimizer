@@ -235,10 +235,7 @@ styled_df.columns.name = "Annual Salary (€)"
 # Layout: horizontal header above
 st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
 
-# Show numeric table without complex styling (robust for Streamlit)
-st.dataframe(styled_df, height=400)
-
-# Separate heatmap with blue gradient to visualize FI age
+# Heatmap with blue gradient to visualize FI age
 fig, ax = plt.subplots(figsize=(8, 4))
 data = styled_df.values.astype(float)
 im = ax.imshow(data, aspect="auto", cmap="Blues", origin="upper")
@@ -254,7 +251,7 @@ for i in range(data.shape[0]):
     for j in range(data.shape[1]):
         val = data[i, j]
         if not np.isnan(val):
-            ax.text(j, i, f"{int(val)}", ha="center", va="center", color="white", fontsize=8)
+            ax.text(j, i, f"{int(val)}", ha="center", va="center", color="black", fontsize=8)
 
 plt.colorbar(im, ax=ax, label="FI Age")
 st.pyplot(fig)
