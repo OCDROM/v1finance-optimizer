@@ -217,7 +217,7 @@ styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
 st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
 st.markdown("<div class='custom-header-vertical'>Your Monthly Expenses (€)</div>", unsafe_allow_html=True)
 st.dataframe(
-    styled_df.style.background_gradient(cmap="Blues"),
+    styled_df,
     height=400
 )
 
