@@ -110,7 +110,7 @@ with col_inputs[6]:
     st.markdown("<span class='custom-label'>Invested (%) <span class='custom-info' title='Share of your total money that is not held in cash.'>i</span></span>", unsafe_allow_html=True)
     invested = st.number_input(" ", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f", key="invested", label_visibility="collapsed")
 with col_inputs[7]:
-    st.markdown("<span class='custom-label'>Your Current Age</span>", unsafe_allow_html=True)
+    st.markdown("<span class='custom-label'>Your Age</span>", unsafe_allow_html=True)
     current_age = st.number_input(" ", min_value=0, value=33, step=1, format="%d", key="age", label_visibility="collapsed")
 
 
@@ -199,7 +199,7 @@ target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format
 st.subheader("Age when Capital Returns Cover Annual Expenses")
 styled_df = results_df.copy()
 styled_df.index.name = "Required Monthly Spending (€)"
-styled_df.columns.name = "Annual Work Salary (€)"
+styled_df.columns.name = "Annual Salary (€)"
 
 # Conditional formatting: blue gradient for ages, empty for NaN
 def blue_age(val):
@@ -210,9 +210,14 @@ def blue_age(val):
 
 styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
 
+
 # Layout: horizontal header above, vertical header left of table
-st.markdown("<div class='custom-header-horizontal'>Annual Work Salary (€)</div>", unsafe_allow_html=True)
-st.markdown("<div style='display: flex; align-items: flex-start;'><div style='writing-mode: vertical-rl; transform: rotate(180deg); font-size: 1em; color: #003049; font-weight: 700; padding: 0.5em 0.2em; margin-right: 0.5em;'>Your Monthly Expenses (€)</div><div style='flex:1;'>" + styled_df.style.applymap(blue_age).render() + "</div></div>", unsafe_allow_html=True)
+st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
+st.markdown("<div class='custom-header-vertical'>Your Monthly Expenses (€)</div>", unsafe_allow_html=True)
+st.dataframe(
+    styled_df.style.applymap(blue_age),
+    height=400
+)
 
 # Calculate summary for selected target spending
 def get_summary(current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending):
