@@ -128,7 +128,18 @@ capital_tax_fraction = capital_tax / 100
 
 # Table axes
 base_salary = salary_pm * 12
-salary_cols = [int(round(base_salary/10000)*10000)] + [int(round(base_salary * (1 + 0.2 * i)/10000)*10000) for i in range(1, 7)]
+raw_salary_cols = [int(round(base_salary/10000)*10000)] + [int(round(base_salary * (1 + 0.2 * i)/10000)*10000) for i in range(1, 7)]
+# Ensure unique column names
+salary_cols = []
+seen = {}
+for s in raw_salary_cols:
+    label = f"€{int(s):,}"
+    if label in seen:
+        seen[label] += 1
+        label = f"{label} ({seen[label]})"
+    else:
+        seen[label] = 1
+    salary_cols.append(label)
 
 # Target spending: center row is input, increments of 500 up/down, floor 500, remove bottom 5 rows
 spending_center = expenses
