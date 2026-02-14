@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 
+
 # Set Streamlit page config and theme
 st.set_page_config(layout="wide", page_title="Financial Independence Calculator")
 st.markdown(
@@ -8,9 +9,11 @@ st.markdown(
     <style>
     :root {
         --primary-color: #00bcd4;
-        --background-color: #003049;
-        --secondary-background-color: #011f30;
-        --text-color: #FFFFFF;
+        --table-navy: #003049;
+        --table-cyan: #00bcd4;
+        --background-color: #ffffff;
+        --secondary-background-color: #f5f7fa;
+        --text-color: #111111;
         --font-family: 'sans-serif';
     }
     body, .stApp {
@@ -20,15 +23,19 @@ st.markdown(
     }
     .stButton>button {
         background-color: var(--primary-color);
-        color: var(--text-color);
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.5em 2em;
+        font-weight: 600;
     }
-    .stTextInput>div>input {
-        background-color: var(--secondary-background-color);
-        color: var(--text-color);
-    }
-    .stNumberInput>div>input {
-        background-color: var(--secondary-background-color);
-        color: var(--text-color);
+    .stTextInput>div>input, .stNumberInput>div>input {
+        background-color: #fff;
+        color: #111;
+        border-radius: 999px;
+        border: 1px solid #00bcd4;
+        padding: 0.5em 1.5em;
+        font-size: 1.1em;
+        margin: 0.2em 0.5em 0.2em 0;
     }
     .stDataFrame, .stTable {
         background-color: var(--secondary-background-color);
@@ -41,17 +48,30 @@ st.markdown(
 
 st.title("Financial Independence Calculator")
 
-# Sidebar for user inputs
-with st.sidebar:
-    st.header("Current costs and earnings")
+
+# Inputs as pill/box style above the table
+st.markdown("""
+<div style='padding: 1.5em 0 0.5em 0;'><h4 style='margin-bottom:0.5em;'>Current costs and earnings</h4></div>
+""", unsafe_allow_html=True)
+
+col_inputs = st.columns([1,1,1,1,1,1,1,1,1])
+with col_inputs[0]:
     current_assets = st.number_input("Current assets", min_value=0, value=1173891, step=1000, format="%d")
+with col_inputs[1]:
     salary_pm = st.number_input("Salary p.m.", min_value=0, value=14167, step=100, format="%d")
+with col_inputs[2]:
     expenses = st.number_input("Expenses", min_value=0, value=3000, step=100, format="%d")
+with col_inputs[3]:
     market_pa = st.number_input("Market p.a. (%)", min_value=0.0, value=3.5, step=0.1, format="%.2f")
+with col_inputs[4]:
     bonus = st.number_input("Bonus (months)", min_value=0.0, value=4.5, step=0.1, format="%.1f")
+with col_inputs[5]:
     salary_tax = st.number_input("Salary Tax (%)", min_value=0.0, value=35.0, step=0.1, format="%.1f")
+with col_inputs[6]:
     capital_tax = st.number_input("Capital Tax (%)", min_value=0.0, value=25.0, step=0.1, format="%.1f")
+with col_inputs[7]:
     invested = st.number_input("Invested (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f")
+with col_inputs[8]:
     current_age = st.number_input("Your Current Age", min_value=0, value=33, step=1, format="%d")
 
 
