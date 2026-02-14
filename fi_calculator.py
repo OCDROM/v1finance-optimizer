@@ -142,7 +142,7 @@ for s in raw_salary_cols:
     salary_labels.append(label)
 
 # Target spending: center row is input, increments of 500 up/down, floor 500, remove bottom 5 rows
-spending_center = expenses
+spending_center = target_spending
 spending_rows = [max(500, spending_center - 2500),
                  max(500, spending_center - 2000),
                  max(500, spending_center - 1500),
@@ -209,7 +209,7 @@ target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format
 
 st.subheader("Age when Capital Returns Cover Annual Expenses")
 styled_df = results_df.copy()
-styled_df.index.name = "Required Monthly Spending (€)"
+styled_df.index.name = "Expenses need p.m. (€)"
 styled_df.columns.name = "Annual Salary (€)"
 
 # Conditional formatting: blue gradient for ages, empty for NaN
@@ -226,9 +226,8 @@ styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
 
 # Layout: horizontal header above, vertical header left of table
 st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
-st.markdown("<div class='custom-header-vertical'>Your Monthly Expenses (€)</div>", unsafe_allow_html=True)
 st.dataframe(
-    styled_df,
+    styled_df.style.background_gradient(cmap="Blues"),
     height=400
 )
 
