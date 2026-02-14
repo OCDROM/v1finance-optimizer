@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 # Set Streamlit page config and theme
@@ -233,10 +234,21 @@ styled_df.columns.name = "Annual Salary (€)"
 
 # Layout: horizontal header above
 st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
-st.dataframe(
-    styled_df.style.background_gradient(cmap="Blues"),
-    height=400
-)
+
+# Show numeric table without complex styling (robust for Streamlit)
+st.dataframe(styled_df, height=400)
+
+# Separate heatmap with blue gradient to visualize FI age
+fig, ax = plt.subplots(figsize=(8, 4))
+im = ax.imshow(styled_df.values.astype(float), aspect="auto", cmap="Blues", origin="upper")
+ax.set_xticks(range(len(styled_df.columns)))
+ax.set_xticklabels(styled_df.columns, rotation=45, ha="right")
+ax.set_yticks(range(len(styled_df.index)))
+ax.set_yticklabels(styled_df.index)
+ax.set_xlabel("Annual Salary (€)")
+ax.set_ylabel("Expenses need p.m. (€)")
+plt.colorbar(im, ax=ax, label="FI Age")
+st.pyplot(fig)
 
 # Calculate summary for selected target spending
 def get_summary(current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending):
