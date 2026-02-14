@@ -240,13 +240,22 @@ st.dataframe(styled_df, height=400)
 
 # Separate heatmap with blue gradient to visualize FI age
 fig, ax = plt.subplots(figsize=(8, 4))
-im = ax.imshow(styled_df.values.astype(float), aspect="auto", cmap="Blues", origin="upper")
+data = styled_df.values.astype(float)
+im = ax.imshow(data, aspect="auto", cmap="Blues", origin="upper")
 ax.set_xticks(range(len(styled_df.columns)))
 ax.set_xticklabels(styled_df.columns, rotation=45, ha="right")
 ax.set_yticks(range(len(styled_df.index)))
 ax.set_yticklabels(styled_df.index)
 ax.set_xlabel("Annual Salary (€)")
 ax.set_ylabel("Expenses need p.m. (€)")
+
+# Write FI age inside each cell
+for i in range(data.shape[0]):
+    for j in range(data.shape[1]):
+        val = data[i, j]
+        if not np.isnan(val):
+            ax.text(j, i, f"{int(val)}", ha="center", va="center", color="white", fontsize=8)
+
 plt.colorbar(im, ax=ax, label="FI Age")
 st.pyplot(fig)
 
