@@ -94,7 +94,7 @@ with col_inputs[0]:
     current_assets = st.number_input(" ", min_value=0, value=65000, step=1000, format="%d", key="assets", label_visibility="collapsed")
 with col_inputs[1]:
     st.markdown("<span class='custom-label'>Salary p.m.</span>", unsafe_allow_html=True)
-    salary_pm = st.number_input(" ", min_value=0, value=3500, step=100, format="%d", key="salary", label_visibility="collapsed")
+    salary_pm = st.number_input(" ", min_value=0, value=3700, step=100, format="%d", key="salary", label_visibility="collapsed")
 with col_inputs[2]:
     st.markdown("<span class='custom-label'>Expenses p.m.</span>", unsafe_allow_html=True)
     expenses = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="expenses", label_visibility="collapsed")
