@@ -141,10 +141,24 @@ for s in raw_salary_cols:
         seen[label] = 1
     salary_labels.append(label)
 
+# Ensure salary_labels are unique for DataFrame columns
+from collections import Counter
+label_counts = Counter(salary_labels)
+unique_labels = []
+label_tracker = {}
+for label in salary_labels:
+    if label_counts[label] > 1:
+        if label not in label_tracker:
+            label_tracker[label] = 1
+        else:
+            label_tracker[label] += 1
+        unique_labels.append(f"{label}_{label_tracker[label]}")
+    else:
+        unique_labels.append(label)
+salary_labels = unique_labels
+
 
 # Target Expenses Needed per Month (pill style)
-st.markdown("<span class='custom-label'>Target Monthly Expenses <span class='custom-info' title='Adjust your target monthly expenses to see how it affects your FI age.'>i</span></span>", unsafe_allow_html=True)
-target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="targetspend_main", label_visibility="collapsed")
 
 # Target spending: center row is input, increments of 500 up/down, floor 500, remove bottom 5 rows
 spending_center = target_spending
