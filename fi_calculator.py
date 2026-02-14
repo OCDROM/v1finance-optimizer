@@ -224,11 +224,6 @@ results_df = pd.DataFrame(
 )
 
 
-# Target Expenses Needed per Month (pill style)
-st.markdown("<span class='custom-label'>Target Monthly Expenses <span class='custom-info' title='Adjust your target monthly expenses to see how it affects your FI age.'>i</span></span>", unsafe_allow_html=True)
-target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="targetspend", label_visibility="collapsed")
-
-
 # Table with blue-only color palette and clarified headers
 
 st.subheader("Age when Capital Returns Cover Annual Expenses")
@@ -236,19 +231,7 @@ styled_df = results_df.copy()
 styled_df.index.name = "Expenses need p.m. (€)"
 styled_df.columns.name = "Annual Salary (€)"
 
-# Conditional formatting: blue gradient for ages, empty for NaN
-def blue_age(val):
-    try:
-        v = int(val)
-    except (ValueError, TypeError):
-        return ''
-    color = f"rgba(0, 80, 200, {min(1, (100-v)/60)})"
-    return f"background-color: {color}; color: #fff; font-weight: bold;"
-
-styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
-
-
-# Layout: horizontal header above, vertical header left of table
+# Layout: horizontal header above
 st.markdown("<div class='custom-header-horizontal'>Annual Salary (€)</div>", unsafe_allow_html=True)
 st.dataframe(
     styled_df.style.background_gradient(cmap="Blues"),
