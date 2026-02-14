@@ -122,7 +122,7 @@ import numpy as np
 # User Inputs
 gross_income_annual = salary_pm * 12
 net_income_annual = gross_income_annual * (1 - salary_tax / 100)
-annual_expenses = expenses * 12
+annual_expenses = expenses * 12  # current (pre-FI) annual expenses
 invested_fraction = invested / 100
 market_return = market_pa / 100
 capital_tax_fraction = capital_tax / 100
@@ -184,15 +184,24 @@ spending_rows = spending_rows[:6] + spending_rows[6:7]  # Only keep center and 5
 
 # Function to simulate wealth trajectory and FI age
 def calculate_fi_age(
-    current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending
+    current_assets,
+    net_income_annual,
+    annual_current_expenses,
+    market_return,
+    capital_tax_fraction,
+    invested_fraction,
+    current_age,
+    target_spending,
 ):
     assets = current_assets
     age = current_age
     while age < 100:
-        # Investment returns (after tax)
-        investment_return = assets * market_return * (1 - capital_tax_fraction)
-        # Add net income and investment return, subtract expenses
-        assets = assets + net_income_annual * invested_fraction + investment_return - annual_expenses
+        # Annual savings = net salary minus current living expenses
+        savings = net_income_annual - annual_current_expenses
+        # Investment returns (after tax) only on invested portion of assets
+        investment_return = assets * invested_fraction * market_return * (1 - capital_tax_fraction)
+        # Update assets with savings and investment return
+        assets = assets + savings + investment_return
         # Check if investment return covers target spending
         if investment_return / 12 >= target_spending:
             return age
@@ -208,12 +217,12 @@ for spend in spending_rows:
         fi_age = calculate_fi_age(
             current_assets=current_assets,
             net_income_annual=net_income,
-            annual_expenses=spend * 12,
+            annual_current_expenses=annual_expenses,
             market_return=market_return,
             capital_tax_fraction=capital_tax_fraction,
             invested_fraction=invested_fraction,
             current_age=current_age,
-            target_spending=spend
+            target_spending=spend,
         )
         row.append(fi_age if fi_age is not None else np.nan)
     results.append(row)
@@ -257,12 +266,22 @@ plt.colorbar(im, ax=ax, label="FI Age")
 st.pyplot(fig)
 
 # Calculate summary for selected target spending
-def get_summary(current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending):
+def get_summary(
+    current_assets,
+    net_income_annual,
+    annual_current_expenses,
+    market_return,
+    capital_tax_fraction,
+    invested_fraction,
+    current_age,
+    target_spending,
+):
     assets = current_assets
     age = current_age
     while age < 100:
-        investment_return = assets * market_return * (1 - capital_tax_fraction)
-        assets = assets + net_income_annual * invested_fraction + investment_return - annual_expenses
+        savings = net_income_annual - annual_current_expenses
+        investment_return = assets * invested_fraction * market_return * (1 - capital_tax_fraction)
+        assets = assets + savings + investment_return
         if investment_return / 12 >= target_spending:
             return age, investment_return / 12
         age += 1
@@ -271,12 +290,12 @@ def get_summary(current_assets, net_income_annual, annual_expenses, market_retur
 fi_age, monthly_return = get_summary(
     current_assets=current_assets,
     net_income_annual=net_income_annual,
-    annual_expenses=target_spending * 12,
+    annual_current_expenses=annual_expenses,
     market_return=market_return,
     capital_tax_fraction=capital_tax_fraction,
     invested_fraction=invested_fraction,
     current_age=current_age,
-    target_spending=target_spending
+    target_spending=target_spending,
 )
 
 if fi_age:
@@ -293,3 +312,60 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+
+# --- Net Worth Over Time Chart ---
+
+def simulate_net_worth(
+    current_assets,
+    net_income_annual,
+    annual_current_expenses,
+    market_return,
+    capital_tax_fraction,
+    invested_fraction,
+    current_age,
+):
+    """Simulate yearly net worth from current age to 100 using same assumptions."""
+    assets = current_assets
+    ages = []
+    values = []
+    age = current_age
+    while age <= 100:
+        ages.append(age)
+        values.append(assets)
+        savings = net_income_annual - annual_current_expenses
+        investment_return = assets * invested_fraction * market_return * (1 - capital_tax_fraction)
+        assets = assets + savings + investment_return
+        age += 1
+    return ages, values
+
+
+ages, net_worth = simulate_net_worth(
+    current_assets=current_assets,
+    net_income_annual=net_income_annual,
+    annual_current_expenses=annual_expenses,
+    market_return=market_return,
+    capital_tax_fraction=capital_tax_fraction,
+    invested_fraction=invested_fraction,
+    current_age=current_age,
+)
+
+# Compute target FI capital level for reference (if feasible)
+target_capital = None
+denominator = invested_fraction * market_return * (1 - capital_tax_fraction)
+if denominator > 0 and target_spending > 0:
+    target_capital = (target_spending * 12) / denominator
+
+st.subheader("Projected Net Worth Over Time")
+fig2, ax2 = plt.subplots(figsize=(8, 4))
+ax2.plot(ages, net_worth, color="#003049", linewidth=2, label="Net worth")
+
+if target_capital is not None:
+    ax2.axhline(target_capital, color="#00bcd4", linestyle="--", linewidth=1.5, label="FI target capital")
+
+ax2.set_xlabel("Age (years)")
+ax2.set_ylabel("Net worth (€)")
+ax2.ticklabel_format(style="plain", axis="y")
+ax2.grid(alpha=0.15)
+ax2.legend()
+st.pyplot(fig2)
