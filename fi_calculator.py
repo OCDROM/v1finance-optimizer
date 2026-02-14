@@ -356,6 +356,7 @@ denominator = invested_fraction * market_return * (1 - capital_tax_fraction)
 if denominator > 0 and target_spending > 0:
     target_capital = (target_spending * 12) / denominator
 
+st.markdown("<div style='height: 32px'></div>", unsafe_allow_html=True)
 st.subheader("Projected Net Worth Over Time")
 fig2, ax2 = plt.subplots(figsize=(8, 4))
 ax2.plot(ages, net_worth, color="#003049", linewidth=2, label="Net worth")
