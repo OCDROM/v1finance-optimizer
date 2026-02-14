@@ -106,12 +106,12 @@ with col_inputs[4]:
 with col_inputs[5]:
     st.markdown("<span class='custom-label'>Capital Tax (%)</span>", unsafe_allow_html=True)
     capital_tax = st.number_input(" ", min_value=0.0, value=25.0, step=0.1, format="%.1f", key="captax", label_visibility="collapsed")
-with col_inputs[6]:
-    st.markdown("<span class='custom-label'>Invested (%) <span class='custom-info' title='Share of your total money that is not held in cash.'>i</span></span>", unsafe_allow_html=True)
-    invested = st.number_input(" ", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f", key="invested", label_visibility="collapsed")
-with col_inputs[7]:
-    st.markdown("<span class='custom-label'>Your Current Age</span>", unsafe_allow_html=True)
-    current_age = st.number_input(" ", min_value=0, value=33, step=1, format="%d", key="age", label_visibility="collapsed")
+
+# Add remaining inputs below, outside columns
+st.markdown("<span class='custom-label'>Invested (%) <span class='custom-info' title='Share of your total money that is not held in cash.'>i</span></span>", unsafe_allow_html=True)
+invested = st.number_input(" ", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f", key="invested", label_visibility="collapsed")
+st.markdown("<span class='custom-label'>Your Current Age</span>", unsafe_allow_html=True)
+current_age = st.number_input(" ", min_value=0, value=33, step=1, format="%d", key="age", label_visibility="collapsed")
 
 
 # --- Calculation Logic ---
