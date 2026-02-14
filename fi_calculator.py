@@ -36,6 +36,22 @@ st.markdown(
         margin-bottom: 0.2em !important;
         margin-left: 0.3em !important;
     }
+    .custom-header-vertical {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        font-size: 1em;
+        color: #003049;
+        font-weight: 700;
+        padding: 0.5em 0.2em;
+        margin-bottom: 0.5em;
+    }
+    .custom-header-horizontal {
+        font-size: 1em;
+        color: #003049;
+        font-weight: 700;
+        padding: 0.5em 0.2em;
+        margin-bottom: 0.5em;
+    }
     .custom-pill-input input {
         background: #fff !important;
         color: #111 !important;
@@ -71,7 +87,7 @@ st.markdown("""
 <div style='padding: 1.5em 0 0.5em 0;'><h4 style='margin-bottom:0.5em;'>Current Costs and Earnings</h4></div>
 """, unsafe_allow_html=True)
 
-col_inputs = st.columns([1,1,1,1,1,1,1,1,1])
+col_inputs = st.columns([1,1,1,1,1,1])
 with col_inputs[0]:
     st.markdown("<span class='custom-label'>Current assets</span>", unsafe_allow_html=True)
     current_assets = st.number_input(" ", min_value=0, value=65000, step=1000, format="%d", key="assets", label_visibility="collapsed")
@@ -79,24 +95,21 @@ with col_inputs[1]:
     st.markdown("<span class='custom-label'>Salary p.m.</span>", unsafe_allow_html=True)
     salary_pm = st.number_input(" ", min_value=0, value=3500, step=100, format="%d", key="salary", label_visibility="collapsed")
 with col_inputs[2]:
-    st.markdown("<span class='custom-label'>Expenses</span>", unsafe_allow_html=True)
+    st.markdown("<span class='custom-label'>Expenses p.m.</span>", unsafe_allow_html=True)
     expenses = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="expenses", label_visibility="collapsed")
 with col_inputs[3]:
     st.markdown("<span class='custom-label'>Market p.a. (%)</span>", unsafe_allow_html=True)
     market_pa = st.number_input(" ", min_value=0.0, value=4.0, step=0.1, format="%.2f", key="market", label_visibility="collapsed")
 with col_inputs[4]:
-    st.markdown("<span class='custom-label'>Bonus <span class='custom-info' title='Annual variable pay, expressed in extra months of salary.'>i</span></span>", unsafe_allow_html=True)
-    bonus = st.number_input(" ", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="bonus", label_visibility="collapsed")
-with col_inputs[5]:
     st.markdown("<span class='custom-label'>Salary Tax (%) <span class='custom-info' title='Total of social security contributions and taxes as a % of gross salary.'>i</span></span>", unsafe_allow_html=True)
     salary_tax = st.number_input(" ", min_value=0.0, value=35.0, step=0.1, format="%.1f", key="salarytax", label_visibility="collapsed")
-with col_inputs[6]:
+with col_inputs[5]:
     st.markdown("<span class='custom-label'>Capital Tax (%)</span>", unsafe_allow_html=True)
     capital_tax = st.number_input(" ", min_value=0.0, value=25.0, step=0.1, format="%.1f", key="captax", label_visibility="collapsed")
-with col_inputs[7]:
+with col_inputs[6]:
     st.markdown("<span class='custom-label'>Invested (%) <span class='custom-info' title='Share of your total money that is not held in cash.'>i</span></span>", unsafe_allow_html=True)
     invested = st.number_input(" ", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f", key="invested", label_visibility="collapsed")
-with col_inputs[8]:
+with col_inputs[7]:
     st.markdown("<span class='custom-label'>Your Current Age</span>", unsafe_allow_html=True)
     current_age = st.number_input(" ", min_value=0, value=33, step=1, format="%d", key="age", label_visibility="collapsed")
 
@@ -104,8 +117,9 @@ with col_inputs[8]:
 # --- Calculation Logic ---
 import numpy as np
 
+
 # User Inputs
-gross_income_annual = salary_pm * 12 + bonus * salary_pm
+gross_income_annual = salary_pm * 12
 net_income_annual = gross_income_annual * (1 - salary_tax / 100)
 annual_expenses = expenses * 12
 invested_fraction = invested / 100
@@ -114,7 +128,9 @@ capital_tax_fraction = capital_tax / 100
 
 # Table axes
 target_spending_range = np.arange(1000, 7001, 500)  # €1,000 to €7,000
-gross_income_range = np.arange(80000, 380001, 50000)  # €80,000 to €380,000
+# Salary columns: start at 12*salary_pm, then +20%, +40%, ...
+base_salary = salary_pm * 12
+salary_cols = [base_salary] + [int(base_salary * (1 + 0.2 * i)) for i in range(1, 7)]
 
 # Function to simulate wealth trajectory and FI age
 def calculate_fi_age(
@@ -137,7 +153,7 @@ def calculate_fi_age(
 results = []
 for spend in target_spending_range:
     row = []
-    for income in gross_income_range:
+    for income in salary_cols:
         net_income = income * (1 - salary_tax / 100)
         fi_age = calculate_fi_age(
             current_assets=current_assets,
@@ -155,7 +171,7 @@ for spend in target_spending_range:
 results_df = pd.DataFrame(
     results,
     index=[f"€{int(x):,}" for x in target_spending_range],
-    columns=[f"€{int(x):,}" for x in gross_income_range]
+    columns=[f"€{int(x):,}" for x in salary_cols]
 )
 
 
@@ -169,12 +185,16 @@ st.write(":blue[Adjust your target monthly expenses to see how it affects your F
 st.subheader("Age when Capital Returns Cover Annual Expenses")
 styled_df = results_df.copy()
 styled_df.index.name = "Required Monthly Spending (€)"
-styled_df.columns.name = "Gross Labor Income per Year (€)"
+styled_df.columns.name = "Annual Work Salary (€)"
 styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
+
+# Custom header display
+st.markdown("<div class='custom-header-horizontal'>Annual Work Salary (€)</div>", unsafe_allow_html=True)
 st.dataframe(
     styled_df.style.background_gradient(cmap="Blues"),
     height=400
 )
+st.markdown("<div class='custom-header-vertical'>Your Monthly Expenses (€)</div>", unsafe_allow_html=True)
 
 # Calculate summary for selected target spending
 def get_summary(current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending):
