@@ -129,8 +129,8 @@ capital_tax_fraction = capital_tax / 100
 # Table axes
 base_salary = salary_pm * 12
 raw_salary_cols = [int(round(base_salary/10000)*10000)] + [int(round(base_salary * (1 + 0.2 * i)/10000)*10000) for i in range(1, 7)]
-# Ensure unique column names
-salary_cols = []
+# Ensure unique column names for display, keep numeric values for calculation
+salary_labels = []
 seen = {}
 for s in raw_salary_cols:
     label = f"€{int(s):,}"
@@ -139,7 +139,7 @@ for s in raw_salary_cols:
         label = f"{label} ({seen[label]})"
     else:
         seen[label] = 1
-    salary_cols.append(label)
+    salary_labels.append(label)
 
 # Target spending: center row is input, increments of 500 up/down, floor 500, remove bottom 5 rows
 spending_center = expenses
@@ -178,7 +178,7 @@ def calculate_fi_age(
 results = []
 for spend in spending_rows:
     row = []
-    for income in salary_cols:
+    for income in raw_salary_cols:
         net_income = income * (1 - salary_tax / 100)
         fi_age = calculate_fi_age(
             current_assets=current_assets,
@@ -196,7 +196,7 @@ for spend in spending_rows:
 results_df = pd.DataFrame(
     results,
     index=[f"€{int(x):,}" for x in spending_rows],
-    columns=[f"€{int(x):,}" for x in salary_cols]
+    columns=salary_labels
 )
 
 
