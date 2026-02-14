@@ -15,6 +15,7 @@ st.markdown(
         --secondary-background-color: #f5f7fa;
         --text-color: #111111;
         --font-family: 'sans-serif';
+        --pill-border: #e0e0e0;
     }
     body, .stApp {
         background-color: var(--background-color) !important;
@@ -28,14 +29,32 @@ st.markdown(
         padding: 0.5em 2em;
         font-weight: 600;
     }
-    .stTextInput>div>input, .stNumberInput>div>input {
-        background-color: #fff;
-        color: #111;
-        border-radius: 999px;
-        border: 1px solid #00bcd4;
-        padding: 0.5em 1.5em;
-        font-size: 1.1em;
-        margin: 0.2em 0.5em 0.2em 0;
+    .custom-pill {
+        background: #fff !important;
+        border: 1.5px solid var(--pill-border) !important;
+        border-radius: 999px !important;
+        padding: 0.5em 1.5em !important;
+        margin: 0.2em 0.5em 0.2em 0 !important;
+        color: #111 !important;
+        font-size: 1.1em !important;
+        font-weight: 500 !important;
+        box-shadow: none !important;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .custom-pill label {
+        color: #111 !important;
+        font-weight: 600 !important;
+        font-size: 1em !important;
+        margin-bottom: 0.2em !important;
+    }
+    .custom-info {
+        font-size: 0.9em;
+        color: #888;
+        margin-left: 0.3em;
+        cursor: pointer;
+        border-bottom: 1px dotted #888;
     }
     .stDataFrame, .stTable {
         background-color: var(--secondary-background-color);
@@ -51,28 +70,46 @@ st.title("Financial Independence Calculator")
 
 # Inputs as pill/box style above the table
 st.markdown("""
-<div style='padding: 1.5em 0 0.5em 0;'><h4 style='margin-bottom:0.5em;'>Current costs and earnings</h4></div>
+<div style='padding: 1.5em 0 0.5em 0;'><h4 style='margin-bottom:0.5em;'>Current Costs and Earnings</h4></div>
 """, unsafe_allow_html=True)
 
 col_inputs = st.columns([1,1,1,1,1,1,1,1,1])
 with col_inputs[0]:
-    current_assets = st.number_input("Current assets", min_value=0, value=1173891, step=1000, format="%d")
+    st.markdown("<div class='custom-pill'><label>Current assets</label>", unsafe_allow_html=True)
+    current_assets = st.number_input(" ", min_value=0, value=65000, step=1000, format="%d", key="assets")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[1]:
-    salary_pm = st.number_input("Salary p.m.", min_value=0, value=14167, step=100, format="%d")
+    st.markdown("<div class='custom-pill'><label>Salary p.m.</label>", unsafe_allow_html=True)
+    salary_pm = st.number_input(" ", min_value=0, value=3500, step=100, format="%d", key="salary")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[2]:
-    expenses = st.number_input("Expenses", min_value=0, value=3000, step=100, format="%d")
+    st.markdown("<div class='custom-pill'><label>Expenses</label>", unsafe_allow_html=True)
+    expenses = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="expenses")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[3]:
-    market_pa = st.number_input("Market p.a. (%)", min_value=0.0, value=3.5, step=0.1, format="%.2f")
+    st.markdown("<div class='custom-pill'><label>Market p.a. (%)</label>", unsafe_allow_html=True)
+    market_pa = st.number_input(" ", min_value=0.0, value=4.0, step=0.1, format="%.2f", key="market")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[4]:
-    bonus = st.number_input("Bonus (months)", min_value=0.0, value=4.5, step=0.1, format="%.1f")
+    st.markdown("<div class='custom-pill'><label>Bonus <span class='custom-info' title='Annual variable pay, expressed in extra months of salary.'>i</span></label>", unsafe_allow_html=True)
+    bonus = st.number_input(" ", min_value=0.0, value=0.0, step=0.1, format="%.1f", key="bonus")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[5]:
-    salary_tax = st.number_input("Salary Tax (%)", min_value=0.0, value=35.0, step=0.1, format="%.1f")
+    st.markdown("<div class='custom-pill'><label>Salary Tax (%) <span class='custom-info' title='Total of social security contributions and taxes as a % of gross salary.'>i</span></label>", unsafe_allow_html=True)
+    salary_tax = st.number_input(" ", min_value=0.0, value=35.0, step=0.1, format="%.1f", key="salarytax")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[6]:
-    capital_tax = st.number_input("Capital Tax (%)", min_value=0.0, value=25.0, step=0.1, format="%.1f")
+    st.markdown("<div class='custom-pill'><label>Capital Tax (%)</label>", unsafe_allow_html=True)
+    capital_tax = st.number_input(" ", min_value=0.0, value=25.0, step=0.1, format="%.1f", key="captax")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[7]:
-    invested = st.number_input("Invested (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f")
+    st.markdown("<div class='custom-pill'><label>Invested (%) <span class='custom-info' title='Share of your total money that is not held in cash.'>i</span></label>", unsafe_allow_html=True)
+    invested = st.number_input(" ", min_value=0.0, max_value=100.0, value=100.0, step=1.0, format="%.1f", key="invested")
+    st.markdown("</div>", unsafe_allow_html=True)
 with col_inputs[8]:
-    current_age = st.number_input("Your Current Age", min_value=0, value=33, step=1, format="%d")
+    st.markdown("<div class='custom-pill'><label>Your Current Age</label>", unsafe_allow_html=True)
+    current_age = st.number_input(" ", min_value=0, value=33, step=1, format="%d", key="age")
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # --- Calculation Logic ---
@@ -132,12 +169,25 @@ results_df = pd.DataFrame(
     columns=[f"€{int(x):,}" for x in gross_income_range]
 )
 
-st.subheader("Target Monthly Spending after Financial Independence")
-target_spending = st.number_input("Target Monthly Spending", min_value=0, value=3000, step=100, format="%d")
-st.write(":blue[Adjust your target monthly spending to see how it affects your FI age]")
 
+# Target Expenses Needed per Month (pill style)
+st.markdown("""
+<div class='custom-pill' style='margin-bottom:1em;'><label>Target Monthly Expenses</label></div>
+""", unsafe_allow_html=True)
+target_spending = st.number_input(" ", min_value=0, value=2000, step=100, format="%d", key="targetspend")
+st.write(":blue[Adjust your target monthly expenses to see how it affects your FI age]")
+
+
+# Table with blue-only color palette and clarified headers
 st.subheader("Age when Capital Returns Cover Annual Expenses")
-st.dataframe(results_df.style.background_gradient(cmap="PuBuGn"), height=400)
+styled_df = results_df.copy()
+styled_df.index.name = "Required Monthly Spending (€)"
+styled_df.columns.name = "Gross Labor Income per Year (€)"
+styled_df = styled_df.applymap(lambda x: int(x) if pd.notnull(x) else "")
+st.dataframe(
+    styled_df.style.background_gradient(cmap="Blues"),
+    height=400
+)
 
 # Calculate summary for selected target spending
 def get_summary(current_assets, net_income_annual, annual_expenses, market_return, capital_tax_fraction, invested_fraction, current_age, target_spending):
@@ -169,8 +219,8 @@ else:
 
 st.markdown(
     f"""
-    <div style='background-color:#011f30; color:#00bcd4; padding:20px; border-radius:10px; margin-top:30px;'>
-        <h4>Financial Independence Cross Over</h4>
+    <div style='background-color:#003049; color:#fff; padding:20px; border-radius:10px; margin-top:30px;'>
+        <h4>Financial Independence Break Even</h4>
         <p>{summary_text}</p>
     </div>
     """,
