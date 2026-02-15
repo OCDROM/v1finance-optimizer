@@ -325,12 +325,13 @@ def simulate_net_worth(
     invested_fraction,
     current_age,
 ):
-    """Simulate yearly net worth from current age to 100 using same assumptions."""
+    """Simulate yearly net worth from current age to 70 using same assumptions."""
     assets = current_assets
     ages = []
     values = []
     age = current_age
-    while age <= 100:
+    # Stop the projection at age 70 to keep the chart focused
+    while age <= 70:
         ages.append(age)
         values.append(assets)
         savings = net_income_annual - annual_current_expenses
