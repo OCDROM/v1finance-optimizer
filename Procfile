@@ -1,1 +1,1 @@
-web: gunicorn portfolio_optimizer:server
+web: python -m gunicorn portfolio_optimizer:server
