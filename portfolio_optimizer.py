@@ -1,0 +1,1808 @@
+import base64
+import io
+import os
+import dash
+from dash import dcc, html, dash_table, Input, Output, State, ctx, no_update
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# ── Colour palette (matches v1finance.fr) ─────────────────────────────────────
+NAVY    = "#0E3254"
+CYAN    = "#00D4E5"
+BG      = "#F5F5F5"
+WHITE   = "#FFFFFF"
+LGRAY   = "#D8E0E8"
+RED     = "#e63946"
+FONT    = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+
+# ── App ────────────────────────────────────────────────────────────────────────
+app = dash.Dash(
+    __name__,
+    title="V1 Finance – Portfolio Optimizer",
+    suppress_callback_exceptions=True,
+)
+server = app.server  # exposed for gunicorn
+
+# ── Shared styles ──────────────────────────────────────────────────────────────
+INPUT_STYLE = {
+    "border": f"1.5px solid {LGRAY}",
+    "borderRadius": "999px",
+    "padding": "0.5em 1.2em",
+    "fontSize": "0.95em",
+    "fontFamily": FONT,
+    "outline": "none",
+    "background": WHITE,
+    "color": "#111",
+    "height": "40px",
+    "boxSizing": "border-box",
+}
+
+BTN_STYLE = {
+    "background": CYAN,
+    "color": WHITE,
+    "border": "none",
+    "borderRadius": "999px",
+    "padding": "0 1.8em",
+    "height": "40px",
+    "fontWeight": "600",
+    "fontSize": "0.95em",
+    "fontFamily": FONT,
+    "cursor": "pointer",
+    "letterSpacing": "0.03em",
+}
+
+TABLE_HEADER = {
+    "backgroundColor": NAVY,
+    "color": WHITE,
+    "fontWeight": "700",
+    "fontFamily": FONT,
+    "fontSize": "0.85em",
+    "textTransform": "uppercase",
+    "letterSpacing": "0.06em",
+    "borderBottom": f"2px solid {CYAN}",
+    "padding": "10px 14px",
+}
+
+TABLE_CELL = {
+    "fontFamily": FONT,
+    "fontSize": "0.95em",
+    "color": "#111",
+    "backgroundColor": WHITE,
+    "padding": "10px 14px",
+    "borderBottom": f"1px solid {LGRAY}",
+}
+
+# ── Shared responsive container style ──────────────────────────────────────────
+CONTAINER = {
+    "maxWidth": "1100px",
+    "width": "100%",
+    "margin": "0 auto",
+    "padding": "0 1em",
+    "boxSizing": "border-box",
+}
+
+# ── Fundamentals column definitions — one set per tab ─────────────────────────
+_TC = [  # Ticker + Company prefix (always shown)
+    {"name": ["", "Ticker"],  "id": "ticker"},
+    {"name": ["", "Company"], "id": "company"},
+]
+FUND_COLS = {
+    "valuations": _TC + [
+        {"name": ["Valuation", "P/E"],       "id": "pe"},
+        {"name": ["Valuation", "Fwd P/E"],   "id": "fwd_pe"},
+        {"name": ["Valuation", "EV/EBITDA"], "id": "ev_ebitda"},
+        {"name": ["Valuation", "P/S"],       "id": "ps"},
+        {"name": ["Valuation", "P/B"],       "id": "pb"},
+    ],
+    "balance": _TC + [
+        {"name": ["Position",  "Cash €M"],     "id": "cash_m"},
+        {"name": ["Position",  "Net Debt €M"], "id": "net_debt_m"},
+        {"name": ["Position",  "Equity €M"],   "id": "equity_m"},
+        {"name": ["Health",    "Debt/Eq"],     "id": "debt_eq"},
+        {"name": ["Health",    "Curr Ratio"],  "id": "curr_ratio"},
+        {"name": ["Health",    "Int Cov"],     "id": "int_cov"},
+        {"name": ["Trend 1Y",  "Net Debt"],    "id": "nd_1y_chg"},
+        {"name": ["Trend 1Y",  "Equity"],      "id": "eq_1y_chg"},
+        {"name": ["Trend 3Y",  "Net Debt"],    "id": "nd_3y_chg"},
+        {"name": ["Trend 3Y",  "Equity"],      "id": "eq_3y_chg"},
+    ],
+    "income": _TC + [
+        {"name": ["Margins",  "Gross %"],      "id": "gross_m"},
+        {"name": ["Margins",  "Oper %"],       "id": "op_m"},
+        {"name": ["Margins",  "Net %"],        "id": "net_m"},
+        {"name": ["Returns",  "ROE %"],        "id": "roe"},
+        {"name": ["Returns",  "ROA %"],        "id": "roa"},
+        {"name": ["Growth",   "Rev YoY"],      "id": "rev_growth"},
+        {"name": ["Growth",   "Rev 3Y CAGR"],  "id": "rev_3y"},
+        {"name": ["Growth",   "Rev Max CAGR"], "id": "rev_max"},
+        {"name": ["Growth",   "EPS YoY"],      "id": "eps_growth"},
+        {"name": ["Growth",   "EPS 3Y CAGR"],  "id": "eps_3y"},
+        {"name": ["Growth",   "EPS Max CAGR"], "id": "eps_max"},
+    ],
+    "cashflow": _TC + [
+        {"name": ["Cash Flow", "Op CF €M"],     "id": "op_cf_m"},
+        {"name": ["Change",    "Op CF YoY"],    "id": "op_cf_1y"},
+        {"name": ["Change",    "Op CF 3Y CAGR"],"id": "op_cf_3y"},
+        {"name": ["Cash Flow", "FCF €M"],       "id": "fcf_m"},
+        {"name": ["Change",    "FCF YoY"],      "id": "fcf_1y"},
+        {"name": ["Change",    "FCF 3Y CAGR"],  "id": "fcf_3y_cagr"},
+        {"name": ["Cash Flow", "Capex €M"],     "id": "capex_m"},
+        {"name": ["Cash Flow", "FCF Yield"],    "id": "fcf_yield"},
+        {"name": ["Cash Flow", "FCF/Rev"],      "id": "fcf_rev"},
+    ],
+}
+
+# ── Default portfolio ─────────────────────────────────────────────────────────
+DEFAULT_HOLDINGS = [
+    ("CAMB.BR",  25),  ("PARRO.PA", 250), ("AUB.PA",   145), ("SOL.MI",    75),
+    ("VIRP.PA",   6),  ("EXENS.PA",  42), ("RBT.PA",     3), ("BAMNB.AS", 340),
+    ("FII.PA",   60),  ("MRN.PA",    99), ("FUR.AS",   200), ("ASY.PA",    85),
+    ("COFA.PA", 228),  ("HEIJM.AS",  68), ("MAIRE.MI", 320), ("IR5B.IR",  778),
+    ("VU.PA",    12),  ("VLTSA.PA", 665), ("ARIS.MI", 1150), ("SPM.MI",  1030),
+    ("LOUP.PA", 129),
+]
+
+# ── Layout ─────────────────────────────────────────────────────────────────────
+app.layout = html.Div(
+    style={"background": BG, "minHeight": "100vh", "fontFamily": FONT, "WebkitFontSmoothing": "antialiased"},
+    children=[
+
+        # ── Header bar ────────────────────────────────────────────────────────
+        html.Div(
+            style={
+                "background": NAVY,
+                "padding": "1.2em 1.5em",
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "space-between",
+                "flexWrap": "wrap",
+                "gap": "0.5em",
+            },
+            children=[
+                html.Div([
+                    html.Span("V1 ", style={"color": CYAN, "fontWeight": "800", "fontSize": "1.5em"}),
+                    html.Span("Portfolio Optimizer", style={"color": WHITE, "fontWeight": "300", "fontSize": "1.5em"}),
+                ]),
+                html.Span(
+                    "Portfolio Builder & Fundamentals",
+                    style={"color": CYAN, "fontSize": "0.8em", "letterSpacing": "0.12em", "fontWeight": "600"},
+                ),
+            ],
+        ),
+
+        # ── Main content ───────────────────────────────────────────────────────
+        html.Div(
+            style={**CONTAINER, "padding": "2.5em 1em"},
+            children=[
+
+                # ── Subtitle ──────────────────────────────────────────────────
+                html.P(
+                    "Build your portfolio below. Enter a ticker and quantity — live prices are fetched automatically from Yahoo Finance.",
+                    style={"color": "#555", "marginBottom": "2em", "fontSize": "0.97em"},
+                ),
+
+                # ── Yahoo Finance CSV import ───────────────────────────────────
+                html.Div(
+                    style={
+                        "background": WHITE,
+                        "borderRadius": "14px",
+                        "padding": "1.2em 1.8em",
+                        "boxShadow": "0 2px 12px rgba(0,0,0,0.06)",
+                        "marginBottom": "1.2em",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "gap": "1.2em",
+                        "flexWrap": "wrap",
+                    },
+                    children=[
+                        html.Div([
+                            html.Span("Import from Yahoo Finance", style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
+                            html.Span(
+                                " — export your portfolio on Yahoo Finance (Portfolio page → Download), then upload the CSV here.",
+                                style={"color": "#888", "fontSize": "0.85em"},
+                            ),
+                        ], style={"flex": "1", "minWidth": "240px"}),
+                        dcc.Upload(
+                            id="csv-upload",
+                            children=html.Button(
+                                "Upload CSV",
+                                style={**BTN_STYLE, "background": NAVY},
+                            ),
+                            accept=".csv",
+                            multiple=False,
+                        ),
+                        html.Div(id="csv-error-msg", style={"color": RED, "fontSize": "0.88em"}),
+                    ],
+                ),
+
+                # ── Add ticker row ────────────────────────────────────────────
+                html.Div(
+                    style={
+                        "background": WHITE,
+                        "borderRadius": "14px",
+                        "padding": "1.4em 1.8em",
+                        "boxShadow": "0 2px 12px rgba(0,0,0,0.06)",
+                        "marginBottom": "2em",
+                    },
+                    children=[
+                        html.H4("Add a Holding", style={"color": NAVY, "marginTop": 0, "marginBottom": "1em"}),
+
+                        html.Div(
+                            style={"display": "flex", "gap": "1em", "alignItems": "center", "flexWrap": "wrap"},
+                            children=[
+                                html.Div([
+                                    html.Label("Ticker", style={"fontSize": "0.8em", "color": "#888", "display": "block", "marginBottom": "4px"}),
+                                    dcc.Input(
+                                        id="ticker-input",
+                                        type="text",
+                                        placeholder="e.g. AAPL",
+                                        debounce=False,
+                                        style={**INPUT_STYLE, "width": "150px", "textTransform": "uppercase"},
+                                        maxLength=10,
+                                    ),
+                                ]),
+                                html.Div([
+                                    html.Label("Quantity", style={"fontSize": "0.8em", "color": "#888", "display": "block", "marginBottom": "4px"}),
+                                    dcc.Input(
+                                        id="qty-input",
+                                        type="number",
+                                        placeholder="e.g. 10",
+                                        min=0,
+                                        style={**INPUT_STYLE, "width": "130px"},
+                                    ),
+                                ]),
+                                html.Div([
+                                    html.Label("\u00a0", style={"fontSize": "0.8em", "display": "block", "marginBottom": "4px"}),
+                                    html.Button(
+                                        "Add",
+                                        id="add-btn",
+                                        n_clicks=0,
+                                        style=BTN_STYLE,
+                                    ),
+                                ]),
+                                html.Div(
+                                    id="error-msg",
+                                    style={"color": RED, "fontSize": "0.88em", "alignSelf": "flex-end", "paddingBottom": "6px"},
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+
+                # ── Portfolio table ────────────────────────────────────────────
+                html.Div(
+                    style={
+                        "background": WHITE,
+                        "borderRadius": "14px",
+                        "boxShadow": "0 2px 12px rgba(0,0,0,0.06)",
+                        "overflow": "hidden",
+                    },
+                    children=[
+                        # Table header row
+                        html.Div(
+                            style={"padding": "1.2em 1.8em", "borderBottom": f"1px solid {LGRAY}"},
+                            children=[
+                                html.H4("Your Portfolio", style={"color": NAVY, "margin": 0, "display": "inline"}),
+                                html.Span(
+                                    id="total-value-badge",
+                                    style={
+                                        "float": "right",
+                                        "background": NAVY,
+                                        "color": CYAN,
+                                        "borderRadius": "999px",
+                                        "padding": "0.25em 1.1em",
+                                        "fontSize": "0.9em",
+                                        "fontWeight": "700",
+                                    },
+                                ),
+                            ],
+                        ),
+
+                        dash_table.DataTable(
+                            id="portfolio-table",
+                            columns=[
+                                {"name": "Ticker",         "id": "ticker",   "editable": False},
+                                {"name": "Company",        "id": "company",  "editable": False},
+                                {"name": "Qty",            "id": "qty",      "editable": True,  "type": "numeric"},
+                                {"name": "Price (live €)", "id": "price",    "editable": False},
+                                {"name": "Total Value (€)", "id": "total",   "editable": False},
+                                {"name": "Weight",         "id": "weight",   "editable": False},
+                            ],
+                            data=[],
+                            row_deletable=True,
+                            editable=False,
+                            style_as_list_view=True,
+                            style_header=TABLE_HEADER,
+                            style_cell=TABLE_CELL,
+                            style_cell_conditional=[
+                                {"if": {"column_id": "ticker"},  "fontWeight": "700", "color": NAVY, "width": "90px"},
+                                {"if": {"column_id": "company"}, "width": "220px"},
+                                {"if": {"column_id": "qty"},     "width": "80px",  "textAlign": "right"},
+                                {"if": {"column_id": "price"},   "width": "120px", "textAlign": "right"},
+                                {"if": {"column_id": "total"},   "width": "130px", "textAlign": "right", "fontWeight": "600"},
+                                {"if": {"column_id": "weight"},  "width": "90px",  "textAlign": "right", "color": "#555"},
+                            ],
+                            style_data_conditional=[
+                                {"if": {"row_index": "odd"}, "backgroundColor": BG},
+                            ],
+                            page_action="none",
+                            style_table={"overflowX": "auto"},
+                        ),
+
+                        # Empty-state message
+                        html.Div(
+                            id="empty-state",
+                            children="No holdings yet. Add a ticker above to get started.",
+                            style={
+                                "textAlign": "center",
+                                "color": "#aaa",
+                                "padding": "3em",
+                                "fontSize": "0.95em",
+                                "fontStyle": "italic",
+                            },
+                        ),
+                    ],
+                ),
+
+                # ── Action buttons row ─────────────────────────────────────────
+                html.Div(
+                    style={"marginTop": "1.5em", "display": "flex", "justifyContent": "flex-end", "alignItems": "center", "gap": "1em", "flexWrap": "wrap"},
+                    children=[
+                        html.Div(id="pull-error-msg", style={"color": RED, "fontSize": "0.88em"}),
+                        html.Button(
+                            "Pull Fundamentals & Scores",
+                            id="pull-fundamentals-btn",
+                            n_clicks=0,
+                            style={**BTN_STYLE, "background": NAVY},
+                        ),
+                        html.Button(
+                            "Correlation Matrix",
+                            id="correlation-btn",
+                            n_clicks=0,
+                            style={**BTN_STYLE, "background": NAVY},
+                        ),
+                        html.Button(
+                            "Efficient Frontier",
+                            id="frontier-btn",
+                            n_clicks=0,
+                            style={**BTN_STYLE, "background": NAVY},
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        # ── Fundamentals tab bar (initially hidden, shown after pull) ────────────
+        html.Div(
+            id="fund-tab-container",
+            style={"display": "none"},
+            children=[
+                html.Div(
+                    style={**CONTAINER, "padding": "1.5em 1em 0"},
+                    children=[
+                        dcc.Tabs(
+                            id="fund-tab",
+                            value="valuations",
+                            colors={"border": "transparent", "primary": NAVY, "background": "transparent"},
+                            style={"borderBottom": "none"},
+                            children=[
+                                dcc.Tab(
+                                    label="Valuations", value="valuations",
+                                    style={"borderRadius": "999px", "border": f"1.5px solid {LGRAY}",
+                                           "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                           "fontSize": "0.88em", "fontWeight": "600",
+                                           "color": NAVY, "background": WHITE},
+                                    selected_style={"borderRadius": "999px", "border": f"1.5px solid {NAVY}",
+                                                    "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                                    "fontSize": "0.88em", "fontWeight": "700",
+                                                    "color": WHITE, "background": NAVY,
+                                                    "borderBottom": f"1.5px solid {NAVY}"},
+                                ),
+                                dcc.Tab(
+                                    label="Balance Sheet", value="balance",
+                                    style={"borderRadius": "999px", "border": f"1.5px solid {LGRAY}",
+                                           "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                           "fontSize": "0.88em", "fontWeight": "600",
+                                           "color": NAVY, "background": WHITE},
+                                    selected_style={"borderRadius": "999px", "border": f"1.5px solid {NAVY}",
+                                                    "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                                    "fontSize": "0.88em", "fontWeight": "700",
+                                                    "color": WHITE, "background": NAVY,
+                                                    "borderBottom": f"1.5px solid {NAVY}"},
+                                ),
+                                dcc.Tab(
+                                    label="Income Statement", value="income",
+                                    style={"borderRadius": "999px", "border": f"1.5px solid {LGRAY}",
+                                           "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                           "fontSize": "0.88em", "fontWeight": "600",
+                                           "color": NAVY, "background": WHITE},
+                                    selected_style={"borderRadius": "999px", "border": f"1.5px solid {NAVY}",
+                                                    "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                                    "fontSize": "0.88em", "fontWeight": "700",
+                                                    "color": WHITE, "background": NAVY,
+                                                    "borderBottom": f"1.5px solid {NAVY}"},
+                                ),
+                                dcc.Tab(
+                                    label="Cash Flow", value="cashflow",
+                                    style={"borderRadius": "999px", "border": f"1.5px solid {LGRAY}",
+                                           "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                           "fontSize": "0.88em", "fontWeight": "600",
+                                           "color": NAVY, "background": WHITE},
+                                    selected_style={"borderRadius": "999px", "border": f"1.5px solid {NAVY}",
+                                                    "padding": "0.35em 1.4em", "marginRight": "0.6em",
+                                                    "fontSize": "0.88em", "fontWeight": "700",
+                                                    "color": WHITE, "background": NAVY,
+                                                    "borderBottom": f"1.5px solid {NAVY}"},
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+
+        # ── Fundamentals section (table, populated by callback) ──────────────────
+        dcc.Loading(
+            id="loading-fundamentals",
+            type="circle",
+            color=CYAN,
+            children=html.Div(
+                id="fundamentals-section",
+                style={**CONTAINER, "padding": "0.5em 1em 1em"},
+            ),
+        ),
+
+        # ── Score section (populated by pull callback, no re-render on tab switch)
+        html.Div(
+            id="score-section",
+            style={**CONTAINER, "padding": "0 1em 2.5em"},
+        ),
+
+        # ── Correlation section ──────────────────────────────────────────────────
+        dcc.Loading(
+            id="loading-correlation",
+            type="circle",
+            color=CYAN,
+            children=html.Div(
+                id="correlation-section",
+                style={**CONTAINER, "padding": "0 1em 3em"},
+            ),
+        ),
+
+        # ── Frontier section ─────────────────────────────────────────────────────
+        dcc.Loading(
+            id="loading-frontier",
+            type="circle",
+            color=CYAN,
+            children=html.Div(
+                id="frontier-section",
+                style={**CONTAINER, "padding": "0 1em 3em"},
+            ),
+        ),
+
+        # ── Hidden stores ──────────────────────────────────────────────────────
+        dcc.Store(id="portfolio-store", data=[]),
+        dcc.Store(id="fundamentals-store", data=[]),
+        dcc.Interval(id="init-interval", interval=300, max_intervals=1),
+    ],
+)
+
+
+# ── Helper: fetch price + name from yfinance ──────────────────────────────────
+def fetch_ticker_data(ticker: str):
+    """Returns (company_name, price) or raises ValueError."""
+    t = yf.Ticker(ticker.upper())
+    info = t.fast_info
+    price = getattr(info, "last_price", None)
+    if price is None or price == 0:
+        raise ValueError(f"Could not fetch price for '{ticker.upper()}'")
+    # Company name — falls back gracefully
+    try:
+        name = t.info.get("shortName") or t.info.get("longName") or ticker.upper()
+    except Exception:
+        name = ticker.upper()
+    return name, round(float(price), 2)
+
+
+# ── Helper: recalculate weights across the full portfolio ─────────────────────
+def recalc_weights(rows):
+    total = sum(r["total"] for r in rows)
+    for r in rows:
+        r["weight"] = f"{round(r['total'] / total * 100, 1)}%" if total else "—"
+    return rows, total
+
+
+# ── Callback: auto-load default portfolio on page load ────────────────────────
+@app.callback(
+    Output("portfolio-store", "data", allow_duplicate=True),
+    Input("init-interval", "n_intervals"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def load_default_portfolio(_, store):
+    if store:          # already populated (e.g. user added tickers before interval fired)
+        return no_update
+
+    def _fetch(ticker, qty):
+        try:
+            name, price = fetch_ticker_data(ticker)
+            return {"ticker": ticker, "company": name, "qty": float(qty),
+                    "price": price, "total": round(float(qty) * price, 2), "weight": "—"}
+        except Exception:
+            return None
+
+    rows = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(_fetch, t, q): (t, q) for t, q in DEFAULT_HOLDINGS}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                rows.append(result)
+
+    # Restore original order
+    order = {t: i for i, (t, _) in enumerate(DEFAULT_HOLDINGS)}
+    rows.sort(key=lambda r: order.get(r["ticker"], 999))
+    rows, _ = recalc_weights(rows)
+    return rows
+
+
+# ── Callback: Add / Delete → update store ─────────────────────────────────────
+@app.callback(
+    Output("portfolio-store", "data"),
+    Output("error-msg", "children"),
+    Output("ticker-input", "value"),
+    Output("qty-input", "value"),
+    Input("add-btn", "n_clicks"),
+    Input("portfolio-table", "data"),
+    State("ticker-input", "value"),
+    State("qty-input", "value"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def update_store(n_clicks, table_data, ticker, qty, store):
+    triggered = ctx.triggered_id
+
+    # ── Row deleted via DataTable ────────────────────────────────────────────
+    if triggered == "portfolio-table":
+        if table_data is None:
+            return [], no_update, no_update, no_update
+        # Re-sync store with current table (preserving raw numeric totals)
+        synced = []
+        for row in table_data:
+            try:
+                synced.append({**row, "total": float(str(row["total"]).replace(",", ""))})
+            except Exception:
+                synced.append(row)
+        synced, _ = recalc_weights(synced)
+        return synced, "", no_update, no_update
+
+    # ── Add button ────────────────────────────────────────────────────────────
+    if triggered == "add-btn":
+        if not ticker or not ticker.strip():
+            return store, "Please enter a ticker symbol.", no_update, no_update
+        if not qty or float(qty) <= 0:
+            return store, "Please enter a quantity greater than 0.", no_update, no_update
+
+        ticker = ticker.strip().upper()
+
+        # Prevent duplicates
+        if any(r["ticker"] == ticker for r in store):
+            return store, f"{ticker} is already in your portfolio.", no_update, no_update
+
+        try:
+            name, price = fetch_ticker_data(ticker)
+        except Exception as e:
+            return store, str(e), no_update, no_update
+
+        total = round(float(qty) * price, 2)
+        new_row = {
+            "ticker":  ticker,
+            "company": name,
+            "qty":     float(qty),
+            "price":   price,
+            "total":   total,
+            "weight":  "—",
+        }
+        updated = store + [new_row]
+        updated, _ = recalc_weights(updated)
+        return updated, "", "", None   # clear inputs on success
+
+    return store, "", no_update, no_update
+
+
+# ── Callback: CSV upload → populate store ─────────────────────────────────────
+# Yahoo Finance portfolio CSV export contains columns: Symbol, Quantity (or Shares)
+@app.callback(
+    Output("portfolio-store",  "data",     allow_duplicate=True),
+    Output("csv-error-msg",    "children"),
+    Input("csv-upload",        "contents"),
+    State("csv-upload",        "filename"),
+    State("portfolio-store",   "data"),
+    prevent_initial_call=True,
+)
+def import_csv(contents, filename, store):
+    if contents is None:
+        return no_update, no_update
+
+    # Decode base64 payload
+    try:
+        _content_type, content_string = contents.split(",", 1)
+        decoded = base64.b64decode(content_string).decode("utf-8", errors="replace")
+        df = pd.read_csv(io.StringIO(decoded))
+    except Exception:
+        return no_update, "Could not read file. Please upload a valid CSV."
+
+    # Normalise column names
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # Find ticker column
+    ticker_col = next((c for c in df.columns if c in ("symbol", "ticker")), None)
+    if ticker_col is None:
+        return no_update, "No 'Symbol' or 'Ticker' column found in CSV."
+
+    # Find quantity column
+    qty_col = next((c for c in df.columns if c in ("quantity", "shares", "qty", "units")), None)
+
+    errors = []
+    new_store = list(store)
+    existing = {r["ticker"] for r in new_store}
+
+    rows_to_fetch = []
+    for _, row in df.iterrows():
+        raw_ticker = str(row[ticker_col]).strip().upper()
+        if not raw_ticker or raw_ticker in ("NAN", ""):
+            continue
+        qty = 1.0
+        if qty_col:
+            try:
+                qty = float(row[qty_col])
+                if qty <= 0:
+                    qty = 1.0
+            except Exception:
+                qty = 1.0
+        if raw_ticker not in existing:
+            rows_to_fetch.append((raw_ticker, qty))
+            existing.add(raw_ticker)
+
+    if not rows_to_fetch:
+        return no_update, "No new tickers found in the file (duplicates skipped)."
+
+    # Fetch prices concurrently
+    def _fetch(t, q):
+        try:
+            name, price = fetch_ticker_data(t)
+            return {"ticker": t, "company": name, "qty": q, "price": price, "total": round(q * price, 2), "weight": "—"}
+        except Exception:
+            return None
+
+    fetched, failed = [], []
+    with ThreadPoolExecutor(max_workers=min(len(rows_to_fetch), 6)) as ex:
+        futures = {ex.submit(_fetch, t, q): t for t, q in rows_to_fetch}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                fetched.append(result)
+            else:
+                failed.append(futures[future])
+
+    new_store.extend(fetched)
+    new_store, _ = recalc_weights(new_store)
+
+    msg = ""
+    if failed:
+        msg = f"Could not fetch price for: {', '.join(failed)}"
+
+    return new_store, msg
+
+
+# ── Callback: render table + badge from store ──────────────────────────────────
+@app.callback(
+    Output("portfolio-table", "data"),
+    Output("total-value-badge", "children"),
+    Output("empty-state", "style"),
+    Input("portfolio-store", "data"),
+)
+def render_table(store):
+    if not store:
+        badge = "Total: €0"
+        empty_style = {
+            "textAlign": "center", "color": "#aaa",
+            "padding": "3em", "fontSize": "0.95em", "fontStyle": "italic",
+        }
+        return [], badge, empty_style
+
+    total = sum(r["total"] for r in store)
+    badge = f"Total: €{total:,.0f}"
+    empty_style = {"display": "none"}
+
+    display_rows = [
+        {
+            **r,
+            "price": f"{float(r['price']):,.2f}",
+            "total": f"{float(str(r['total']).replace(',', '')):,.0f}",
+        }
+        for r in store
+    ]
+    return display_rows, badge, empty_style
+
+
+# ── Fundamentals helpers ─────────────────────────────────────────────────────
+def _fmt(val, decimals=1):
+    if val is None:
+        return "\u2014"
+    try:
+        v = float(val)
+        return "\u2014" if v != v else f"{v:.{decimals}f}"
+    except Exception:
+        return "\u2014"
+
+def _pct(val):
+    if val is None:
+        return "\u2014"
+    try:
+        v = float(val)
+        return "\u2014" if v != v else f"{v * 100:.1f}%"
+    except Exception:
+        return "\u2014"
+
+def _millions(val):
+    if val is None:
+        return "\u2014"
+    try:
+        v = float(val)
+        return "\u2014" if v != v else f"€{v / 1e6:,.0f}M"
+    except Exception:
+        return "\u2014"
+
+def _sf(val):
+    """Return safe float or None (handles NaN)."""
+    if val is None:
+        return None
+    try:
+        v = float(val)
+        return None if v != v else v
+    except Exception:
+        return None
+
+
+def _fetch_quarterly_trends(t_obj):
+    """Return trend directions per metric: +1 improving, 0 flat, -1 declining, None = no data."""
+    trends = {"trend_op_m": None, "trend_rev": None, "trend_fcf": None, "trend_debt": None}
+    try:
+        qfin = t_obj.quarterly_financials
+        if qfin is not None and not qfin.empty and len(qfin.columns) >= 3:
+            cols    = qfin.columns[:4]
+            rev_key = next((k for k in ["Total Revenue", "Revenue"] if k in qfin.index), None)
+            oi_key  = next((k for k in ["Operating Income", "Ebit"] if k in qfin.index), None)
+            if rev_key:
+                rev = qfin.loc[rev_key, cols].dropna().astype(float)
+                if len(rev) >= 3:
+                    mid = len(rev) // 2
+                    if rev.iloc[:mid].mean() > rev.iloc[mid:].mean() * 1.03:
+                        trends["trend_rev"] = 1
+                    elif rev.iloc[:mid].mean() < rev.iloc[mid:].mean() * 0.97:
+                        trends["trend_rev"] = -1
+                    else:
+                        trends["trend_rev"] = 0
+            if rev_key and oi_key:
+                rev = qfin.loc[rev_key, cols].dropna().astype(float)
+                oi  = qfin.loc[oi_key,  cols].dropna().astype(float)
+                common = rev.index.intersection(oi.index)
+                if len(common) >= 3:
+                    om  = oi[common] / rev[common]
+                    mid = len(om) // 2
+                    if float(om.iloc[:mid].mean()) > float(om.iloc[mid:].mean()) * 1.02:
+                        trends["trend_op_m"] = 1
+                    elif float(om.iloc[:mid].mean()) < float(om.iloc[mid:].mean()) * 0.98:
+                        trends["trend_op_m"] = -1
+                    else:
+                        trends["trend_op_m"] = 0
+    except Exception:
+        pass
+    try:
+        qcf = t_obj.quarterly_cashflow
+        if qcf is not None and not qcf.empty and len(qcf.columns) >= 3:
+            cols      = qcf.columns[:4]
+            ocf_key   = next((k for k in ["Operating Cash Flow", "Total Cash From Operating Activities",
+                                           "Cash Flow From Continuing Operating Activities"] if k in qcf.index), None)
+            capex_key = next((k for k in ["Capital Expenditure", "Capital Expenditures",
+                                           "Purchase Of Property Plant And Equipment"] if k in qcf.index), None)
+            if ocf_key:
+                ocf   = qcf.loc[ocf_key, cols].dropna().astype(float)
+                capex = qcf.loc[capex_key, cols].dropna().astype(float).abs() if capex_key else None
+                fcf_s = (ocf - capex).dropna() if capex is not None else ocf
+                if len(fcf_s) >= 3:
+                    mid = len(fcf_s) // 2
+                    if float(fcf_s.iloc[:mid].mean()) > float(fcf_s.iloc[mid:].mean()) * 1.05:
+                        trends["trend_fcf"] = 1
+                    elif float(fcf_s.iloc[:mid].mean()) < float(fcf_s.iloc[mid:].mean()) * 0.95:
+                        trends["trend_fcf"] = -1
+                    else:
+                        trends["trend_fcf"] = 0
+    except Exception:
+        pass
+    try:
+        qbs = t_obj.quarterly_balance_sheet
+        if qbs is not None and not qbs.empty and len(qbs.columns) >= 3:
+            cols     = qbs.columns[:4]
+            debt_key = next((k for k in ["Total Debt", "Long Term Debt", "Total Long Term Debt"] if k in qbs.index), None)
+            if debt_key:
+                debt = qbs.loc[debt_key, cols].dropna().astype(float)
+                if len(debt) >= 3:
+                    early, late = float(debt.iloc[-1]), float(debt.iloc[0])
+                    if early != 0:
+                        if late < early * 0.95:
+                            trends["trend_debt"] = 1
+                        elif late > early * 1.05:
+                            trends["trend_debt"] = -1
+                        else:
+                            trends["trend_debt"] = 0
+    except Exception:
+        pass
+    return trends
+
+
+def _cagr_from_annual(t_obj, metric: str, years: int) -> str:
+    """Compute CAGR over `years` from annual financials. metric: 'rev' or 'eps'."""
+    try:
+        ann = t_obj.financials  # rows=metrics, cols=dates newest→oldest
+        if ann is None or ann.empty:
+            return "\u2014"
+        if metric == "rev":
+            key = next((k for k in ["Total Revenue", "Revenue"] if k in ann.index), None)
+        else:  # eps
+            key = next((k for k in ["Diluted EPS", "Basic EPS", "Net Income Common Stockholders", "Net Income"] if k in ann.index), None)
+        if key is None:
+            return "\u2014"
+        series = ann.loc[key].dropna().sort_index(ascending=False)
+        if len(series) <= years:
+            return "\u2014"
+        v_recent = float(series.iloc[0])
+        v_base   = float(series.iloc[years])
+        if v_base <= 0 or v_recent <= 0:
+            return "\u2014"
+        result = (v_recent / v_base) ** (1.0 / years) - 1
+        return f"{result * 100:.1f}%"
+    except Exception:
+        return "\u2014"
+
+
+def _best_cagr(t_obj, metric: str, max_years: int = 4) -> str:
+    """Try CAGR from max_years down to 2, return first non-empty result."""
+    for y in range(max_years, 1, -1):
+        val = _cagr_from_annual(t_obj, metric, y)
+        if val != "\u2014":
+            return val
+    return "\u2014"
+
+
+def _annual_bs_series(t_obj, key_options: list):
+    """Get an annual balance sheet series (newest-first) trying multiple key names."""
+    try:
+        bs = t_obj.balance_sheet
+        if bs is None or bs.empty:
+            return None
+        key = next((k for k in key_options if k in bs.index), None)
+        if key is None:
+            return None
+        s = bs.loc[key].dropna().sort_index(ascending=False).astype(float)
+        return s if len(s) > 0 else None
+    except Exception:
+        return None
+
+
+def _annual_cf_series(t_obj):
+    """Returns (ocf_series, fcf_series) sorted newest-first, or (None, None)."""
+    try:
+        cf = t_obj.cashflow
+        if cf is None or cf.empty:
+            return None, None
+        ocf_key   = next((k for k in ["Operating Cash Flow", "Total Cash From Operating Activities",
+                                       "Cash Flow From Continuing Operating Activities"] if k in cf.index), None)
+        capex_key = next((k for k in ["Capital Expenditure", "Capital Expenditures",
+                                       "Purchase Of Property Plant And Equipment"] if k in cf.index), None)
+        if ocf_key is None:
+            return None, None
+        ocf = cf.loc[ocf_key].dropna().sort_index(ascending=False).astype(float)
+        if capex_key:
+            capex = cf.loc[capex_key].dropna().sort_index(ascending=False).astype(float).abs()
+            common = ocf.index.intersection(capex.index)
+            fcf = (ocf[common] - capex[common]).dropna()
+        else:
+            fcf = None
+        return (ocf if len(ocf) > 0 else None), fcf
+    except Exception:
+        return None, None
+
+
+def _yoy_pct(s) -> str:
+    """Year-over-year % change from a series (newest first)."""
+    if s is None or len(s) < 2:
+        return "\u2014"
+    v0, v1 = float(s.iloc[0]), float(s.iloc[1])
+    if v1 == 0:
+        return "\u2014"
+    pct = (v0 - v1) / abs(v1) * 100
+    sign = "+" if pct >= 0 else ""
+    return f"{sign}{pct:.1f}%"
+
+
+def _cagr_series_disp(s, n: int) -> str:
+    """CAGR over n years from series s (newest first), displayed as %."""
+    if s is None or len(s) <= n:
+        return "\u2014"
+    v0, vn = float(s.iloc[0]), float(s.iloc[n])
+    if vn == 0 or (v0 < 0 and vn < 0):
+        return "\u2014"
+    if vn < 0 or v0 < 0:
+        return "\u2014"
+    result = (v0 / vn) ** (1.0 / n) - 1
+    sign = "+" if result >= 0 else ""
+    return f"{sign}{result * 100:.1f}%"
+
+
+def _delta_disp(s, n: int) -> str:
+    """% change between iloc[0] and iloc[n] in series s, with sign."""
+    if s is None or len(s) <= n:
+        return "\u2014"
+    v0, vn = float(s.iloc[0]), float(s.iloc[n])
+    if vn == 0:
+        return "\u2014"
+    pct = (v0 - vn) / abs(vn) * 100
+    sign = "+" if pct >= 0 else ""
+    return f"{sign}{pct:.1f}%"
+
+
+def _fetch_one(ticker: str) -> dict:
+    EMPTY_DISP  = {k: "\u2014" for k in [
+        "pe", "fwd_pe", "ev_ebitda", "ps", "pb",
+        "gross_m", "op_m", "net_m", "roe", "roa",
+        "debt_eq", "curr_ratio", "int_cov", "rev_growth", "eps_growth",
+        "cash_m", "net_debt_m", "equity_m",
+        "nd_1y_chg", "nd_3y_chg", "eq_1y_chg", "eq_3y_chg",
+        "fcf_m", "fcf_yield", "op_cf_m", "capex_m", "fcf_rev",
+        "rev_3y", "rev_max", "eps_3y", "eps_max",
+        "op_cf_1y", "op_cf_3y", "fcf_1y", "fcf_3y_cagr",
+    ]}
+    EMPTY_RAW   = {k: None for k in [
+        "raw_gross_m", "raw_op_m", "raw_net_m", "raw_roe", "raw_roa",
+        "raw_debt_eq", "raw_curr_ratio", "raw_int_cov",
+        "raw_rev_growth", "raw_eps_growth", "raw_rev_3y", "raw_eps_3y",
+        "raw_fcf_yield", "raw_fcf_rev", "raw_pe", "raw_fwd_pe",
+        "raw_ev_ebitda", "raw_ps", "raw_pb",
+        "raw_fcf_growth_1y", "raw_ocf_growth_1y",
+    ]}
+    EMPTY_TREND = {"trend_op_m": None, "trend_rev": None, "trend_fcf": None, "trend_debt": None}
+    try:
+        t_obj  = yf.Ticker(ticker)
+        info   = t_obj.info
+        fcf    = info.get("freeCashflow")
+        mktcap = info.get("marketCap")
+        ocf    = info.get("operatingCashflow")
+        capex  = info.get("capitalExpenditures")  # usually negative
+        rev    = info.get("totalRevenue")
+        raw_fy      = (fcf / mktcap) if (fcf and mktcap and mktcap > 0) else None
+        raw_fcf_rev = (fcf / rev)    if (fcf and rev    and rev    > 0) else None
+        fy_disp = f"{raw_fy * 100:.1f}%" if raw_fy is not None else "\u2014"
+        trends  = _fetch_quarterly_trends(t_obj)
+
+        # ── Balance sheet history ─────────────────────────────────────────
+        cash_s    = _annual_bs_series(t_obj, ["Cash And Cash Equivalents", "Cash",
+                                               "Cash And Short Term Investments"])
+        debt_s    = _annual_bs_series(t_obj, ["Total Debt", "Long Term Debt"])
+        eq_s      = _annual_bs_series(t_obj, ["Stockholders Equity", "Total Stockholder Equity",
+                                               "Common Stock Equity", "Total Equity Gross Minority Interest"])
+        cash_v    = float(cash_s.iloc[0]) if cash_s is not None else None
+        debt_v    = float(debt_s.iloc[0]) if debt_s is not None else None
+        eq_v      = float(eq_s.iloc[0])   if eq_s   is not None else None
+        nd_v      = (debt_v - cash_v) if (debt_v is not None and cash_v is not None) else None
+        # Net debt annual series for trend
+        if debt_s is not None and cash_s is not None:
+            common = debt_s.index.intersection(cash_s.index)
+            nd_s   = (debt_s[common] - cash_s[common]).dropna()
+            nd_s   = nd_s if len(nd_s) > 0 else None
+        else:
+            nd_s = None
+        # Interest coverage from annual financials
+        int_cov_v = None
+        try:
+            fin     = t_obj.financials
+            ebit_k  = next((k for k in ["EBIT", "Ebit", "Operating Income"] if k in fin.index), None)
+            int_k   = next((k for k in ["Interest Expense", "Interest Expense Non Operating",
+                                         "Net Interest Income"] if k in fin.index), None)
+            if ebit_k and int_k:
+                ebit_val = float(fin.loc[ebit_k].dropna().iloc[0])
+                int_val  = float(fin.loc[int_k].dropna().iloc[0])
+                if int_val != 0:
+                    int_cov_v = abs(ebit_val / int_val)
+        except Exception:
+            pass
+
+        # ── Cash flow history ─────────────────────────────────────────────
+        ocf_s, fcf_s = _annual_cf_series(t_obj)
+        # raw 1Y growth rates for scoring
+        raw_fcf_g1y = None
+        raw_ocf_g1y = None
+        if fcf_s is not None and len(fcf_s) >= 2:
+            v0, v1 = float(fcf_s.iloc[0]), float(fcf_s.iloc[1])
+            if v1 != 0:
+                raw_fcf_g1y = (v0 - v1) / abs(v1)
+        if ocf_s is not None and len(ocf_s) >= 2:
+            v0, v1 = float(ocf_s.iloc[0]), float(ocf_s.iloc[1])
+            if v1 != 0:
+                raw_ocf_g1y = (v0 - v1) / abs(v1)
+        # raw 3Y CAGR for FCF scoring
+        raw_fcf_3y = None
+        if fcf_s is not None and len(fcf_s) > 3:
+            v0, v3 = float(fcf_s.iloc[0]), float(fcf_s.iloc[3])
+            if v0 > 0 and v3 > 0:
+                raw_fcf_3y = (v0 / v3) ** (1.0 / 3) - 1
+        # raw 3Y CAGR numerics for income scoring
+        raw_rev_3y = None
+        raw_eps_3y = None
+        try:
+            ann = t_obj.financials
+            if ann is not None and not ann.empty:
+                rev_k = next((k for k in ["Total Revenue", "Revenue"] if k in ann.index), None)
+                eps_k = next((k for k in ["Net Income Common Stockholders", "Net Income"] if k in ann.index), None)
+                if rev_k:
+                    rs = ann.loc[rev_k].dropna().sort_index(ascending=False).astype(float)
+                    if len(rs) > 3 and float(rs.iloc[3]) > 0 and float(rs.iloc[0]) > 0:
+                        raw_rev_3y = (float(rs.iloc[0]) / float(rs.iloc[3])) ** (1.0/3) - 1
+                if eps_k:
+                    es = ann.loc[eps_k].dropna().sort_index(ascending=False).astype(float)
+                    if len(es) > 3 and float(es.iloc[3]) > 0 and float(es.iloc[0]) > 0:
+                        raw_eps_3y = (float(es.iloc[0]) / float(es.iloc[3])) ** (1.0/3) - 1
+        except Exception:
+            pass
+
+        return {
+            # ── Display fields ──────────────────────────────────────────────
+            "ticker":       ticker,
+            "company":      info.get("shortName") or ticker,
+            "pe":           _fmt(info.get("trailingPE")),
+            "fwd_pe":       _fmt(info.get("forwardPE")),
+            "ev_ebitda":    _fmt(info.get("enterpriseToEbitda")),
+            "ps":           _fmt(info.get("priceToSalesTrailing12Months")),
+            "pb":           _fmt(info.get("priceToBook")),
+            "gross_m":      _pct(info.get("grossMargins")),
+            "op_m":         _pct(info.get("operatingMargins")),
+            "net_m":        _pct(info.get("profitMargins")),
+            "roe":          _pct(info.get("returnOnEquity")),
+            "roa":          _pct(info.get("returnOnAssets")),
+            "debt_eq":      _fmt(info.get("debtToEquity")),
+            "curr_ratio":   _fmt(info.get("currentRatio")),
+            "int_cov":      _fmt(int_cov_v),
+            "cash_m":       _millions(cash_v),
+            "net_debt_m":   _millions(nd_v),
+            "equity_m":     _millions(eq_v),
+            "nd_1y_chg":    _delta_disp(nd_s, 1),
+            "nd_3y_chg":    _delta_disp(nd_s, 3),
+            "eq_1y_chg":    _delta_disp(eq_s, 1),
+            "eq_3y_chg":    _delta_disp(eq_s, 3),
+            "rev_growth":   _pct(info.get("revenueGrowth")),
+            "eps_growth":   _pct(info.get("earningsGrowth")),
+            "rev_3y":       _cagr_from_annual(t_obj, "rev", 3),
+            "rev_max":      _best_cagr(t_obj, "rev", 4),
+            "eps_3y":       _cagr_from_annual(t_obj, "eps", 3),
+            "eps_max":      _best_cagr(t_obj, "eps", 4),
+            "fcf_m":        _millions(fcf),
+            "fcf_yield":    fy_disp,
+            "op_cf_m":      _millions(ocf),
+            "capex_m":      _millions(abs(capex) if capex is not None else None),
+            "fcf_rev":      _pct(raw_fcf_rev),
+            "op_cf_1y":     _yoy_pct(ocf_s),
+            "op_cf_3y":     _cagr_series_disp(ocf_s, 3),
+            "fcf_1y":       _yoy_pct(fcf_s),
+            "fcf_3y_cagr":  _cagr_series_disp(fcf_s, 3),
+            # ── Raw numerics for scoring ────────────────────────────────────
+            "raw_gross_m":     _sf(info.get("grossMargins")),
+            "raw_op_m":        _sf(info.get("operatingMargins")),
+            "raw_net_m":       _sf(info.get("profitMargins")),
+            "raw_roe":         _sf(info.get("returnOnEquity")),
+            "raw_roa":         _sf(info.get("returnOnAssets")),
+            "raw_debt_eq":     _sf(info.get("debtToEquity")),
+            "raw_curr_ratio":  _sf(info.get("currentRatio")),
+            "raw_int_cov":     _sf(int_cov_v),
+            "raw_rev_growth":  _sf(info.get("revenueGrowth")),
+            "raw_eps_growth":  _sf(info.get("earningsGrowth")),
+            "raw_rev_3y":      raw_rev_3y,
+            "raw_eps_3y":      raw_eps_3y,
+            "raw_fcf_yield":   raw_fy,
+            "raw_fcf_rev":     raw_fcf_rev,
+            "raw_pe":          _sf(info.get("trailingPE")),
+            "raw_fwd_pe":      _sf(info.get("forwardPE")),
+            "raw_ev_ebitda":   _sf(info.get("enterpriseToEbitda")),
+            "raw_ps":          _sf(info.get("priceToSalesTrailing12Months")),
+            "raw_pb":          _sf(info.get("priceToBook")),
+            "raw_fcf_growth_1y": raw_fcf_g1y,
+            "raw_ocf_growth_1y": raw_ocf_g1y,
+            **trends,
+        }
+    except Exception:
+        return {"ticker": ticker, "company": "Fetch error", **EMPTY_DISP, **EMPTY_RAW, **EMPTY_TREND}
+
+
+def fetch_fundamentals(tickers: list) -> list:
+    """Fetch fundamentals + quarterly trends concurrently for all tickers."""
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(len(tickers), 6)) as ex:
+        futures = {ex.submit(_fetch_one, t): t for t in tickers}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return [results[t] for t in tickers]
+
+
+# ── Scoring engine ─────────────────────────────────────────────────────────────
+def _sc(val, levels):
+    """Score val against [(threshold, score), ...] highest-first. Returns None if val is None."""
+    if val is None:
+        return None
+    for threshold, score in levels:
+        if val >= threshold:
+            return score
+    return levels[-1][1] if levels else None
+
+
+def _percentile_bonus(val, all_vals, higher_is_better: bool = True) -> float:
+    """Return +0.5/0/-0.5 based on portfolio percentile rank."""
+    clean = [v for v in all_vals if v is not None]
+    if len(clean) < 2 or val is None:
+        return 0.0
+    rank = sum(1 for v in clean if v < val) / len(clean)  # 0..1, higher = bigger value
+    if not higher_is_better:
+        rank = 1.0 - rank
+    if rank >= 0.75:
+        return 0.5
+    if rank <= 0.25:
+        return -0.5
+    return 0.0
+
+
+def _score_valuations(d, all_rows):
+    """Valuation attractiveness. Lower multiples = better. Score /10."""
+    pe    = d.get("raw_pe")
+    fwd   = d.get("raw_fwd_pe")
+    ev_eb = d.get("raw_ev_ebitda")
+    ps    = d.get("raw_ps")
+    pb    = d.get("raw_pb")
+
+    def _pe_s(v):
+        if v is None or v <= 0: return None
+        return _sc(-v, [(-10,10),(-15,8),(-20,6),(-25,4),(-35,2)])
+
+    def _ev_s(v):
+        if v is None or v <= 0: return None
+        return _sc(-v, [(-8,10),(-12,8),(-16,5),(-22,3)])
+
+    def _ps_s(v):
+        if v is None or v <= 0: return None
+        return _sc(-v, [(-1,10),(-2,8),(-3,6),(-5,4)])
+
+    def _pb_s(v):
+        if v is None or v <= 0: return None
+        return _sc(-v, [(-1,10),(-2,8),(-3,6),(-5,4)])
+
+    pairs = [
+        (_pe_s(pe),    2.0),
+        (_pe_s(fwd),   2.5),
+        (_ev_s(ev_eb), 2.0),
+        (_ps_s(ps),    1.5),
+        (_pb_s(pb),    1.0),
+    ]
+    valid = [(s, w) for s, w in pairs if s is not None]
+    if not valid:
+        return None
+    total_w = sum(w for _, w in valid)
+    base = sum(s * w for s, w in valid) / total_w
+    # Portfolio-relative tiebreaker on P/E (lower = better)
+    bonus = _percentile_bonus(pe, [r.get("raw_pe") for r in all_rows], higher_is_better=False)
+    return round(min(10.0, max(1.0, base + bonus)), 1)
+
+
+def _score_balance_sheet(d, all_rows):
+    """Financial health & stability. Score /10."""
+    de  = d.get("raw_debt_eq")
+    cr  = d.get("raw_curr_ratio")
+    ic  = d.get("raw_int_cov")
+    pairs = [
+        (_sc(-de if de is not None else None, [(-30,10),(-60,8),(-100,5),(-150,3)]), 2.5),
+        (_sc(cr,  [(2.0,10),(1.5,8),(1.0,5),(0.5,2)]), 2.0),
+        (_sc(ic,  [(10,10),(5,8),(3,5),(1.5,3),(0,1)]), 2.5),
+    ]
+    valid = [(s, w) for s, w in pairs if s is not None]
+    if not valid:
+        return None
+    total_w = sum(w for _, w in valid)
+    base = sum(s * w for s, w in valid) / total_w
+    bonus = _percentile_bonus(ic, [r.get("raw_int_cov") for r in all_rows], higher_is_better=True)
+    return round(min(10.0, max(1.0, base + bonus)), 1)
+
+
+def _score_income(d, all_rows):
+    """Profitability & growth quality. Score /10."""
+    pairs = [
+        (_sc(d.get("raw_gross_m"),   [(0.40,10),(0.25,7),(0.12,4),(0.0,2)]),  1.5),
+        (_sc(d.get("raw_op_m"),      [(0.20,10),(0.10,7),(0.03,4),(0.0,1)]),  2.0),
+        (_sc(d.get("raw_net_m"),     [(0.15,10),(0.07,7),(0.02,4),(0.0,1)]),  1.5),
+        (_sc(d.get("raw_roe"),       [(0.20,10),(0.12,7),(0.05,4),(0.0,2)]),  1.5),
+        (_sc(d.get("raw_roa"),       [(0.10,10),(0.05,7),(0.02,4),(0.0,2)]),  1.0),
+        (_sc(d.get("raw_rev_growth"), [(0.20,10),(0.10,7),(0.05,4),(0.0,3),(-1,1)]), 1.5),
+        (_sc(d.get("raw_rev_3y"),    [(0.15,10),(0.08,7),(0.03,4),(0.0,2),(-1,1)]),  1.5),
+        (_sc(d.get("raw_eps_growth"), [(0.20,10),(0.10,7),(0.05,4),(0.0,3),(-1,1)]), 1.5),
+        (_sc(d.get("raw_eps_3y"),    [(0.15,10),(0.08,7),(0.03,4),(0.0,2),(-1,1)]),  1.5),
+    ]
+    valid = [(s, w) for s, w in pairs if s is not None]
+    if not valid:
+        return None
+    total_w = sum(w for _, w in valid)
+    base = sum(s * w for s, w in valid) / total_w
+    bonus = _percentile_bonus(d.get("raw_op_m"), [r.get("raw_op_m") for r in all_rows])
+    return round(min(10.0, max(1.0, base + bonus)), 1)
+
+
+def _score_cashflow(d, all_rows):
+    """Cash generation quality & trend. Score /10."""
+    pairs = [
+        (_sc(d.get("raw_fcf_yield"),     [(0.08,10),(0.05,7),(0.02,4),(0.0,2)]),         2.5),
+        (_sc(d.get("raw_fcf_rev"),       [(0.15,10),(0.08,7),(0.03,4),(0.0,2)]),         2.0),
+        (_sc(d.get("raw_fcf_growth_1y"), [(0.20,10),(0.10,7),(0.0,4),(-0.1,2),(-1,1)]), 2.0),
+        (_sc(d.get("raw_ocf_growth_1y"), [(0.20,10),(0.10,7),(0.0,4),(-0.1,2),(-1,1)]), 1.5),
+    ]
+    valid = [(s, w) for s, w in pairs if s is not None]
+    if not valid:
+        return None
+    total_w = sum(w for _, w in valid)
+    base = sum(s * w for s, w in valid) / total_w
+    bonus = _percentile_bonus(d.get("raw_fcf_yield"), [r.get("raw_fcf_yield") for r in all_rows])
+    return round(min(10.0, max(1.0, base + bonus)), 1)
+
+
+def compute_scores(rows):
+    DASH = "\u2014"
+    out = []
+    for d in rows:
+        sv = _score_valuations(d, rows)
+        sb = _score_balance_sheet(d, rows)
+        si = _score_income(d, rows)
+        sc = _score_cashflow(d, rows)
+        # Overall: weighted average of available categories
+        cat_pairs = [(sv, 1.5), (sb, 2.0), (si, 2.0), (sc, 1.5)]
+        valid_cats = [(s, w) for s, w in cat_pairs if s is not None]
+        if valid_cats:
+            tw = sum(w for _, w in valid_cats)
+            overall = round(sum(s * w for s, w in valid_cats) / tw, 1)
+        else:
+            overall = None
+        out.append({
+            "ticker":       d["ticker"],
+            "company":      d["company"],
+            "valuations":   sv      if sv      is not None else DASH,
+            "balance":      sb      if sb      is not None else DASH,
+            "income":       si      if si      is not None else DASH,
+            "cashflow":     sc      if sc      is not None else DASH,
+            "overall":      overall if overall is not None else DASH,
+        })
+    out.sort(key=lambda r: r["overall"] if isinstance(r["overall"], float) else -1, reverse=True)
+    return out
+
+SCORE_COLUMNS = [
+    {"name": "Ticker",           "id": "ticker"},
+    {"name": "Company",          "id": "company"},
+    {"name": "Valuations /10",   "id": "valuations"},
+    {"name": "Balance Sheet /10","id": "balance"},
+    {"name": "Income /10",       "id": "income"},
+    {"name": "Cash Flow /10",    "id": "cashflow"},
+    {"name": "Overall /10",      "id": "overall"},
+]
+
+SCORE_METHODOLOGY = (
+    "Scoring methodology (all scores /10, based on absolute benchmarks + portfolio-relative rank):\u2003"
+    "\u25cf\u2002Valuations — rewards low multiples: P/E <10 = perfect, Fwd P/E and EV/EBITDA weighted more heavily. "
+    "A portfolio-relative bonus (±0.5) is awarded to the cheapest/most expensive stock on P/E.\u2003"
+    "\u25cf\u2002Balance Sheet — rewards low leverage (Debt/Equity), strong liquidity (Current Ratio ≥2), "
+    "and high interest coverage (EBIT / Interest ≥10). Portfolio bonus on interest coverage.\u2003"
+    "\u25cf\u2002Income Statement — rewards wide margins (Gross ≥40%, Operating ≥20%), high returns (ROE ≥20%), "
+    "and strong revenue & EPS growth both YoY and on a 3-year CAGR basis. Portfolio bonus on operating margin.\u2003"
+    "\u25cf\u2002Cash Flow — rewards high FCF yield (≥8%), FCF-to-revenue ratio (≥15%), "
+    "and positive YoY growth in both FCF and Operating Cash Flow. Portfolio bonus on FCF yield.\u2003"
+    "\u25cf\u2002Overall — weighted average of all four categories (Balance Sheet & Income weighted 2×, "
+    "Valuations & Cash Flow weighted 1.5×)."
+)
+
+def _score_cond(col):
+    """Return data condition rules for a score column."""
+    return [
+        {"if": {"filter_query": f"{{{col}}} >= 7",  "column_id": col}, "backgroundColor": CYAN,       "color": NAVY,    "fontWeight": "700"},
+        {"if": {"filter_query": f"{{{col}}} >= 4 && {{{col}}} < 7", "column_id": col}, "backgroundColor": "#E8F4F6", "color": "#4A6572", "fontWeight": "600"},
+        {"if": {"filter_query": f"{{{col}}} < 4",  "column_id": col}, "backgroundColor": BG,          "color": "#888",  "fontWeight": "400"},
+    ]
+
+
+# ── Callback: Pull fundamentals + Scoring ─────────────────────────────────────
+@app.callback(
+    Output("fundamentals-store",   "data"),
+    Output("fund-tab-container",   "style"),
+    Output("score-section",        "children"),
+    Output("pull-error-msg",       "children"),
+    Input("pull-fundamentals-btn", "n_clicks"),
+    State("portfolio-store",       "data"),
+    prevent_initial_call=True,
+)
+def pull_fundamentals(n_clicks, store):
+    if not store:
+        return no_update, no_update, no_update, "Add at least one ticker before running analysis."
+
+    tickers = [r["ticker"] for r in store]
+    rows    = fetch_fundamentals(tickers)
+    scores  = compute_scores(rows)
+
+    # ── Score table ───────────────────────────────────────────────────────────
+    score_cond = [
+        {"if": {"row_index": "odd"}, "backgroundColor": BG},
+        *_score_cond("valuations"),
+        *_score_cond("balance"),
+        *_score_cond("income"),
+        *_score_cond("cashflow"),
+        *_score_cond("overall"),
+    ]
+
+    score_section = html.Div([
+        html.H4("Scores", style={"color": NAVY, "margin": "2em 0 0.5em 0"}),
+        dash_table.DataTable(
+            id="score-table",
+            columns=SCORE_COLUMNS,
+            data=scores,
+            style_as_list_view=False,
+            style_table={"overflowX": "auto", "borderRadius": "14px", "boxShadow": "0 2px 12px rgba(0,0,0,0.06)"},
+            style_header={**TABLE_HEADER, "textAlign": "center"},
+            style_cell={**TABLE_CELL, "textAlign": "center", "minWidth": "90px"},
+            style_cell_conditional=[
+                {"if": {"column_id": "ticker"},  "fontWeight": "700", "color": NAVY, "textAlign": "left", "minWidth": "75px"},
+                {"if": {"column_id": "company"}, "textAlign": "left", "minWidth": "160px"},
+            ],
+            style_data_conditional=score_cond,
+            page_action="none",
+            editable=False,
+        ),
+        html.Div(
+            style={"marginTop": "0.8em", "background": WHITE, "borderRadius": "12px",
+                   "padding": "0.9em 1.4em", "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
+                   "fontSize": "0.82em", "color": "#555", "lineHeight": "1.7"},
+            children=[
+                html.Span("How scores work: ", style={"fontWeight": "700", "color": NAVY}),
+                html.Span(SCORE_METHODOLOGY),
+            ],
+        ),
+        html.P(
+            "\u2605 Cyan \u22657 = strong  \u00b7  Light blue 4\u20136 = moderate  \u00b7  Grey <4 = weak",
+            style={"color": "#888", "fontSize": "0.78em", "marginTop": "0.5em"},
+        ),
+    ])
+
+    return rows, {"display": "block"}, score_section, ""
+
+
+# ── Callback: render fundamentals table for selected tab ──────────────────────
+@app.callback(
+    Output("fundamentals-section", "children"),
+    Input("fund-tab",              "value"),
+    Input("fundamentals-store",    "data"),
+    prevent_initial_call=True,
+)
+def render_fund_table(tab, rows):
+    if not rows:
+        return no_update
+    columns = FUND_COLS.get(tab, FUND_COLS["balance"])
+    tab_labels = {"valuations": "Valuations", "balance": "Balance Sheet", "income": "Income Statement", "cashflow": "Cash Flow"}
+    return [
+        html.H4(f"Fundamentals \u2014 {tab_labels.get(tab, '')}", style={"color": NAVY, "margin": "1.5em 0 0.8em 0"}),
+        dash_table.DataTable(
+            id="fundamentals-table",
+            columns=columns,
+            data=rows,
+            merge_duplicate_headers=True,
+            style_as_list_view=False,
+            style_table={"overflowX": "auto", "borderRadius": "14px", "boxShadow": "0 2px 12px rgba(0,0,0,0.06)"},
+            style_header={**TABLE_HEADER, "textAlign": "center", "whiteSpace": "normal"},
+            style_cell={**TABLE_CELL, "textAlign": "center", "minWidth": "72px", "whiteSpace": "nowrap"},
+            style_cell_conditional=[
+                {"if": {"column_id": "ticker"},  "fontWeight": "700", "color": NAVY, "textAlign": "left", "minWidth": "75px"},
+                {"if": {"column_id": "company"}, "textAlign": "left", "minWidth": "150px", "maxWidth": "200px",
+                 "overflow": "hidden", "textOverflow": "ellipsis"},
+            ],
+            style_data_conditional=[
+                {"if": {"row_index": "odd"}, "backgroundColor": BG},
+            ],
+            page_action="none",
+            editable=False,
+        ),
+    ]
+
+
+# ── Correlation helpers ─────────────────────────────────────────────────────
+def fetch_price_history(tickers: list, period: str = "2y") -> pd.DataFrame:
+    """Download adjusted close prices for all tickers, return as DataFrame."""
+    if not tickers:
+        return pd.DataFrame()
+    raw = yf.download(
+        tickers,
+        period=period,
+        auto_adjust=True,
+        progress=False,
+        threads=True,
+    )
+    if isinstance(raw.columns, pd.MultiIndex):
+        prices = raw["Close"]
+    else:
+        prices = raw[["Close"]] if "Close" in raw.columns else raw
+        if len(tickers) == 1:
+            prices = prices.rename(columns={prices.columns[0]: tickers[0]})
+    return prices.dropna(how="all")
+
+
+def build_correlation_fig(tickers: list) -> tuple:
+    """Returns (fig, error_msg). fig is a Plotly heatmap."""
+    prices = fetch_price_history(tickers)
+    if prices.empty:
+        return None, "Could not download price history for any ticker."
+
+    returns = prices.pct_change(fill_method=None).dropna(how="all")
+
+    # Keep only tickers with sufficient data
+    valid_cols = [c for c in returns.columns if returns[c].notna().sum() >= 60]
+    dropped    = [t for t in tickers if t not in valid_cols]
+    if len(valid_cols) < 2:
+        return None, "Need at least 2 tickers with sufficient price history."
+
+    corr = returns[valid_cols].corr().round(2)
+    labels = list(corr.columns)
+    z      = corr.values.tolist()
+
+    # Annotation text matrix
+    text = [[f"{v:.2f}" for v in row] for row in corr.values]
+
+    # Colorscale: cyan (-1→0) → white (0→~0.5) → grey (0.5→1)
+    colorscale = [
+        [0.0,  CYAN],      # -1  → cyan (negative correlation, best diversification)
+        [0.5,  WHITE],     #  0  → white (uncorrelated, neutral)
+        [0.8,  "#8A9BA8"], # +0.6 → light grey (moderate-high, caution)
+        [1.0,  "#2C3E50"], # +1  → dark grey (fully correlated, bad)
+    ]
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=labels,
+        y=labels,
+        text=text,
+        texttemplate="%{text}",
+        textfont={"size": 13, "color": "#111"},
+        colorscale=colorscale,
+        zmin=-1, zmax=1,
+        colorbar=dict(
+            title="Correlation",
+            tickvals=[-1, -0.5, 0, 0.5, 1],
+            ticktext=["-1", "-0.5", "0", "0.5", "1"],
+            thickness=14,
+            len=0.8,
+        ),
+        hoverongaps=False,
+        hovertemplate="%{x} vs %{y}: %{z:.2f}<extra></extra>",
+    ))
+
+    n = len(labels)
+    fig.update_layout(
+        paper_bgcolor=WHITE,
+        plot_bgcolor=WHITE,
+        font={"family": FONT, "color": "#111"},
+        margin=dict(l=20, r=20, t=20, b=20),
+        height=max(380, 60 * n + 80),
+        xaxis=dict(side="bottom", tickfont={"size": 12, "color": NAVY}, tickangle=-30),
+        yaxis=dict(autorange="reversed", tickfont={"size": 12, "color": NAVY}),
+    )
+
+    warn = f" (excluded — insufficient history: {', '.join(dropped)})" if dropped else ""
+    return fig, warn
+
+
+# ── Callback: Correlation matrix ──────────────────────────────────────────────
+@app.callback(
+    Output("correlation-section", "children"),
+    Input("correlation-btn", "n_clicks"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def run_correlation(n_clicks, store):
+    if not store:
+        return html.P("Add tickers first.", style={"color": RED})
+    tickers = [r["ticker"] for r in store]
+    fig, msg = build_correlation_fig(tickers)
+
+    warn_div = html.P(msg, style={"color": "#888", "fontSize": "0.83em", "marginTop": "0.4em"}) if msg else None
+
+    if fig is None:
+        return html.P(msg, style={"color": RED})
+
+    interpretation = html.Div(
+        style={"marginTop": "1.2em", "background": WHITE,
+               "borderRadius": "12px", "padding": "1em 1.4em",
+               "boxShadow": "0 2px 8px rgba(0,0,0,0.05)", "fontSize": "0.86em", "color": "#555"},
+        children=[
+            html.Span("How to read: ", style={"fontWeight": "700", "color": NAVY}),
+            html.Span("1.0 = perfectly correlated (move in lockstep). "),
+            html.Span("0 = uncorrelated (no relationship). "),
+            html.Span("-1 = perfectly inverse. "),
+            html.Span("Pairs above 0.7 (", style={"color": "#2C3E50"}),
+            html.Span("dark grey", style={"color": "#2C3E50", "fontWeight": "700"}),
+            html.Span(") offer limited diversification benefit.", style={"color": "#2C3E50"}),
+        ],
+    )
+
+    children = [
+        html.H4("Correlation Matrix", style={"color": NAVY, "margin": "1.5em 0 0.3em 0"}),
+        html.P("2-year daily returns  ·  price data via Yahoo Finance",
+               style={"color": "#aaa", "fontSize": "0.82em", "marginBottom": "0.8em"}),
+    ]
+    if warn_div:
+        children.append(warn_div)
+    children.append(html.Div(
+        dcc.Graph(figure=fig, config={"displayModeBar": False}),
+        style={"background": WHITE, "borderRadius": "14px",
+               "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "padding": "1em"},
+    ))
+    children.append(interpretation)
+    return children
+
+
+# ── Efficient Frontier helpers ─────────────────────────────────────────────────
+RF_RATE   = 0.04
+N_SIM     = 6000
+TRADING_D = 252
+
+
+def _portfolio_perf(weights, mean_ret, cov):
+    ret    = float(np.dot(weights, mean_ret)) * TRADING_D
+    vol    = float(np.sqrt(np.dot(weights, np.dot(cov, weights)))) * np.sqrt(TRADING_D)
+    sharpe = (ret - RF_RATE) / vol if vol > 0 else 0.0
+    return ret, vol, sharpe
+
+
+def build_frontier_data(store: list):
+    """Returns (fig, weights_ms, weights_mv, valid_tickers, cur_weights, error_msg)."""
+    tickers = [r["ticker"] for r in store]
+    prices  = fetch_price_history(tickers, period="2y")
+    if prices.empty:
+        return None, None, None, None, None, "Could not download price history."
+
+    rets    = prices.pct_change(fill_method=None).dropna(how="all")
+    valid   = [c for c in rets.columns if rets[c].notna().sum() >= 60]
+    dropped = [t for t in tickers if t not in valid]
+
+    if len(valid) < 2:
+        return None, None, None, None, None, "Need at least 2 tickers with sufficient price history."
+
+    rets     = rets[valid].dropna()
+    mean_ret = rets.mean().values
+    cov      = rets.cov().values
+    n        = len(valid)
+
+    # Current weights by market value
+    total_val = sum(r["total"] for r in store if r["ticker"] in valid)
+    cur_w = np.array([
+        next((r["total"] for r in store if r["ticker"] == t), 0.0) / total_val
+        for t in valid
+    ])
+    cur_ret, cur_vol, cur_sharpe = _portfolio_perf(cur_w, mean_ret, cov)
+
+    # Monte Carlo simulation
+    rng        = np.random.default_rng(42)
+    raw_w      = rng.dirichlet(np.ones(n), size=N_SIM)
+    sim_ret    = (raw_w @ mean_ret) * TRADING_D
+    sim_vol    = np.sqrt(np.einsum("ij,jk,ik->i", raw_w, cov, raw_w)) * np.sqrt(TRADING_D)
+    sim_sharpe = (sim_ret - RF_RATE) / np.where(sim_vol > 0, sim_vol, 1e-9)
+
+    # Frontier curve
+    N_BINS  = 60
+    bins    = np.linspace(sim_ret.min(), sim_ret.max(), N_BINS + 1)
+    fvol, fret = [], []
+    for i in range(N_BINS):
+        mask = (sim_ret >= bins[i]) & (sim_ret < bins[i + 1])
+        if mask.sum() > 0:
+            fvol.append(float(sim_vol[mask].min()))
+            fret.append(float((bins[i] + bins[i + 1]) / 2))
+    if fvol:
+        min_v_idx = int(np.argmin(fvol))
+        fvol_eff  = fvol[min_v_idx:]
+        fret_eff  = fret[min_v_idx:]
+    else:
+        fvol_eff, fret_eff = [], []
+
+    # Special portfolio weights
+    ms_idx     = int(np.argmax(sim_sharpe))
+    mv_idx     = int(np.argmin(sim_vol))
+    weights_ms = raw_w[ms_idx]
+    weights_mv = raw_w[mv_idx]
+    ms_ret, ms_vol = float(sim_ret[ms_idx]), float(sim_vol[ms_idx])
+    mv_ret, mv_vol = float(sim_ret[mv_idx]), float(sim_vol[mv_idx])
+
+    # Build chart
+    hover_text = [
+        f"Return: {r*100:.1f}%<br>Vol: {v*100:.1f}%<br>Sharpe: {s:.2f}"
+        for r, v, s in zip(sim_ret, sim_vol, sim_sharpe)
+    ]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=sim_vol * 100, y=sim_ret * 100, mode="markers",
+        name="Simulated portfolios",
+        marker=dict(size=4, color=sim_sharpe,
+                    colorscale=[[0.0, BG],[0.5,"#A8EBF0"],[1.0, CYAN]],
+                    colorbar=dict(title="Sharpe", thickness=12, len=0.7, x=1.01),
+                    opacity=0.55, showscale=True),
+        text=hover_text, hovertemplate="%{text}<extra></extra>",
+    ))
+    if fvol_eff:
+        fig.add_trace(go.Scatter(
+            x=[v*100 for v in fvol_eff], y=[r*100 for r in fret_eff],
+            mode="lines", name="Efficient frontier",
+            line=dict(color=NAVY, width=2.5),
+            hovertemplate="Frontier  Vol: %{x:.1f}%  Ret: %{y:.1f}%<extra></extra>",
+        ))
+    fig.add_trace(go.Scatter(
+        x=[ms_vol*100], y=[ms_ret*100], mode="markers+text", name="Max Sharpe",
+        marker=dict(symbol="star", size=18, color="#f4a261", line=dict(color=NAVY, width=1.5)),
+        text=["Max Sharpe"], textposition="top right", textfont=dict(size=11, color=NAVY),
+        hovertemplate=f"Max Sharpe<br>Vol: {ms_vol*100:.1f}%<br>Return: {ms_ret*100:.1f}%<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[mv_vol*100], y=[mv_ret*100], mode="markers+text", name="Min Variance",
+        marker=dict(symbol="diamond", size=14, color="#e63946", line=dict(color=NAVY, width=1.5)),
+        text=["Min Variance"], textposition="top right", textfont=dict(size=11, color=NAVY),
+        hovertemplate=f"Min Variance<br>Vol: {mv_vol*100:.1f}%<br>Return: {mv_ret*100:.1f}%<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[cur_vol*100], y=[cur_ret*100], mode="markers+text", name="Your portfolio",
+        marker=dict(symbol="circle", size=16, color=CYAN, line=dict(color=NAVY, width=2)),
+        text=["Your portfolio"], textposition="top left", textfont=dict(size=11, color=NAVY),
+        hovertemplate=f"Your portfolio<br>Vol: {cur_vol*100:.1f}%<br>Return: {cur_ret*100:.1f}%<br>Sharpe: {cur_sharpe:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        paper_bgcolor=WHITE, plot_bgcolor="#f9fbfc",
+        font={"family": FONT, "color": "#111"}, height=520,
+        margin=dict(l=20, r=60, t=20, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.18, xanchor="center", x=0.5,
+                    bgcolor="rgba(255,255,255,0.8)", bordercolor=LGRAY, borderwidth=1),
+        xaxis=dict(title="Annual Volatility (%)", gridcolor=LGRAY, zeroline=False, tickfont={"size": 11}),
+        yaxis=dict(title="Annual Return (%)",     gridcolor=LGRAY, zeroline=False, tickfont={"size": 11}),
+        hovermode="closest",
+    )
+
+    warn = f" (excluded — insufficient history: {', '.join(dropped)})" if dropped else ""
+    return fig, weights_ms, weights_mv, valid, cur_w, warn
+
+
+def _weights_table(valid_tickers, cur_w, weights_ms, weights_mv, store):
+    """Build an HTML table comparing current vs optimal weights."""
+    hdr_style = {**TABLE_HEADER, "textAlign": "center", "whiteSpace": "nowrap"}
+    cell_style = {**TABLE_CELL, "textAlign": "center"}
+
+    header = html.Tr([
+        html.Th("Ticker",                style={**hdr_style, "textAlign": "left"}),
+        html.Th("Current Weight",        style=hdr_style),
+        html.Th("Max Sharpe Weight ★",   style=hdr_style),
+        html.Th("Min Variance Weight ◆", style=hdr_style),
+        html.Th("Rebalance (↑↓)",        style=hdr_style),
+    ])
+
+    body_rows = []
+    for i, t in enumerate(valid_tickers):
+        cur_pct  = round(float(cur_w[i])      * 100, 1)
+        ms_pct   = round(float(weights_ms[i]) * 100, 1)
+        mv_pct   = round(float(weights_mv[i]) * 100, 1)
+        delta    = round(ms_pct - cur_pct, 1)
+        if delta > 0.5:
+            arrow_txt   = f"↑ +{delta:.1f}%"
+            arrow_color = "#166534"
+        elif delta < -0.5:
+            arrow_txt   = f"↓ {delta:.1f}%"
+            arrow_color = "#991b1b"
+        else:
+            arrow_txt   = "≈ Hold"
+            arrow_color = "#888"
+
+        row_bg = WHITE if i % 2 == 0 else BG
+        body_rows.append(html.Tr([
+            html.Td(t,                   style={**cell_style, "background": row_bg,
+                                                "fontWeight": "700", "color": NAVY,
+                                                "textAlign": "left"}),
+            html.Td(f"{cur_pct:.1f}%",   style={**cell_style, "background": row_bg, "color": "#555"}),
+            html.Td(f"{ms_pct:.1f}%",    style={**cell_style, "background": row_bg}),
+            html.Td(f"{mv_pct:.1f}%",    style={**cell_style, "background": row_bg}),
+            html.Td(arrow_txt,           style={**cell_style, "background": row_bg,
+                                                "color": arrow_color, "fontWeight": "700"}),
+        ]))
+
+    return html.Div(
+        html.Table(
+            [html.Thead(header), html.Tbody(body_rows)],
+            style={"width": "100%", "borderCollapse": "collapse",
+                   "borderRadius": "14px", "overflow": "hidden", "tableLayout": "auto"},
+        ),
+        style={"overflowX": "auto", "borderRadius": "14px", "width": "100%",
+               "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "background": WHITE},
+    )
+
+
+# ── Callback: Efficient Frontier ────────────────────────────────────────────────
+@app.callback(
+    Output("frontier-section", "children"),
+    Input("frontier-btn", "n_clicks"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def run_frontier(n_clicks, store):
+    if not store or len(store) < 2:
+        return html.P("Add at least 2 tickers to compute the frontier.", style={"color": RED})
+
+    fig, weights_ms, weights_mv, valid, cur_w, warn = build_frontier_data(store)
+    if fig is None:
+        return html.P(warn, style={"color": RED})
+
+    warn_div = html.P(warn, style={"color": "#888", "fontSize": "0.83em"}) if warn else None
+
+    interp = html.Div(
+        style={"marginTop": "1.2em", "background": WHITE, "borderRadius": "12px",
+               "padding": "1em 1.4em", "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
+               "fontSize": "0.86em", "color": "#555"},
+        children=[
+            html.Span("How to read: ", style={"fontWeight": "700", "color": NAVY}),
+            html.Span("Each dot is a random weighting of your holdings. "),
+            html.Span("The frontier curve ", style={"fontWeight": "700", "color": NAVY}),
+            html.Span("marks the best return for each risk level. "),
+            html.Span("★ Max Sharpe ", style={"color": "#f4a261", "fontWeight": "700"}),
+            html.Span("= best risk-adjusted return.  "),
+            html.Span("◆ Min Variance ", style={"color": "#e63946", "fontWeight": "700"}),
+            html.Span("= lowest volatility.  "),
+            html.Span("● Your portfolio ", style={"color": CYAN, "fontWeight": "700"}),
+            html.Span("= where you sit today."),
+            html.Br(),
+            html.Span(
+                f"Risk-free rate: {RF_RATE*100:.1f}%  ·  2-year daily returns  ·  {N_SIM:,} simulations.  "
+                "Note: weights are historically optimal — treat as directional guidance, not a prediction.",
+                style={"color": "#aaa", "fontSize": "0.9em"},
+            ),
+        ],
+    )
+
+    rebalance_section = html.Div([
+        html.H4("Suggested Rebalancing", style={"color": NAVY, "margin": "2em 0 0.4em 0"}),
+        html.P(
+            "\u2191 increase  \u2193 reduce  \u2014 no change needed  ·  "
+            "The Rebalance column shows the move from your current weight to the Max Sharpe portfolio.",
+            style={"color": "#888", "fontSize": "0.82em", "marginBottom": "0.8em"},
+        ),
+        _weights_table(valid, cur_w, weights_ms, weights_mv, store),
+    ])
+
+    children = [
+        html.H4("Markowitz Efficient Frontier", style={"color": NAVY, "margin": "1.5em 0 0.3em 0"}),
+    ]
+    if warn_div:
+        children.append(warn_div)
+    children.append(html.Div(
+        dcc.Graph(figure=fig, config={"displayModeBar": True,
+                                      "modeBarButtonsToRemove": ["lasso2d", "select2d"]}),
+        style={"background": WHITE, "borderRadius": "14px",
+               "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "padding": "1em"},
+    ))
+    children.append(interp)
+    children.append(rebalance_section)
+    return children
+
+
+# ── Run ────────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8051))
+    app.run(debug=False, host="0.0.0.0", port=port, use_reloader=False)
