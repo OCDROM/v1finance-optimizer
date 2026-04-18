@@ -36,6 +36,10 @@ app = dash.Dash(
 )
 server = app.server  # exposed for gunicorn
 
+@server.route("/ping")
+def ping():
+    return "ok", 200
+
 # ── Custom HTML shell: Inter font + CSS design system ─────────────────────────
 app.index_string = """<!DOCTYPE html>
 <html>
