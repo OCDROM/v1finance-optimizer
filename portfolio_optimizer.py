@@ -374,7 +374,15 @@ app.layout = html.Div(
                     },
                     children=[
                         html.Div([
-                            html.Span("Import from Yahoo Finance", style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
+                            html.Span([
+                                "Import from ",
+                                html.A("Yahoo Finance",
+                                       href="https://finance.yahoo.com/portfolios",
+                                       target="_blank",
+                                       style={"color": CYAN, "fontWeight": "700",
+                                              "textDecoration": "none",
+                                              "borderBottom": f"1px solid {CYAN}"}),
+                            ], style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
                             html.Span(
                                 " — on Yahoo Finance go to Portfolio → Download, then upload the CSV.",
                                 style={"color": "#888", "fontSize": "0.85em"},
@@ -531,25 +539,24 @@ app.layout = html.Div(
                                    "maxWidth": "380px", "height": "48px", "fontSize": "1em"},
                         ),
                         html.Div(id="pull-error-msg", style={"color": RED, "fontSize": "0.85em", "textAlign": "center"}),
+                        # ── Emoji loading message ──────────────────────────────
+                        html.Div(
+                            id="loading-emoji-msg",
+                            style={"display": "none", "textAlign": "center",
+                                   "padding": "1.2em 1em 0.4em", "width": "100%"},
+                            children=[
+                                html.Div(className="emoji-cycle", children=[
+                                    html.Span("📊"), html.Span("📈"), html.Span("🔍"),
+                                    html.Span("💹"), html.Span("⚖️"), html.Span("💰"),
+                                    html.Span("🎯"), html.Span("🧮"),
+                                ]),
+                                html.P("Fetching live data from Yahoo Finance…",
+                                       style={"color": "#9CA3AF", "fontSize": "0.88em",
+                                              "marginTop": "0.5em", "fontStyle": "italic"}),
+                            ],
+                        ),
                     ],
                 ),
-            ],
-        ),
-
-        # ── Emoji loading message (shown while data is fetching) ──────────────
-        html.Div(
-            id="loading-emoji-msg",
-            style={"display": "none", "textAlign": "center",
-                   "padding": "2.5em 1em", "animation": "fadeUp 0.4s ease both"},
-            children=[
-                html.Div(className="emoji-cycle", children=[
-                    html.Span("📊"), html.Span("📈"), html.Span("🔍"),
-                    html.Span("💹"), html.Span("⚖️"), html.Span("💰"),
-                    html.Span("🎯"), html.Span("🧮"),
-                ]),
-                html.P("Fetching live data from Yahoo Finance…",
-                       style={"color": "#9CA3AF", "fontSize": "0.9em",
-                              "marginTop": "0.8em", "fontStyle": "italic"}),
             ],
         ),
 
@@ -778,17 +785,17 @@ def refresh_trigger(n_clicks, current):
 @app.callback(
     Output("loading-emoji-msg", "style"),
     Input("refresh-btn",        "n_clicks"),
-    Input("fundamentals-store", "data"),
+    Input("frontier-store",     "data"),
     prevent_initial_call=True,
 )
 def toggle_loading_emoji(n_clicks, fund_data):
     from dash import ctx
     hidden  = {"display": "none"}
     visible = {"display": "block", "textAlign": "center",
-                "padding": "2.5em 1em", "animation": "fadeUp 0.4s ease both"}
+                "padding": "1.2em 1em 0.4em", "width": "100%"}
     if ctx.triggered_id == "refresh-btn":
         return visible
-    return hidden  # fundamentals arrived → hide
+    return hidden  # frontier arrived (last section) → hide
 
 
 # ── Callback: Add / Delete → update store ─────────────────────────────────────
