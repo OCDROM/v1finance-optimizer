@@ -328,8 +328,15 @@ app.layout = html.Div(
 
                 # ── Subtitle ──────────────────────────────────────────────────
                 html.P(
-                    "Build your portfolio below. Enter a ticker and quantity — live prices are fetched automatically from Yahoo Finance.",
-                    style={"color": "#555", "marginBottom": "2em", "fontSize": "0.97em"},
+                    "Know exactly what to rebalance, and why. Import your portfolio from Yahoo Finance to get started.",
+                    style={
+                        "color": "#555",
+                        "marginBottom": "2em",
+                        "fontSize": "1.08em",
+                        "fontWeight": "500",
+                        "letterSpacing": "0.01em",
+                        "lineHeight": "1.6",
+                    },
                 ),
 
                 # ── Yahoo Finance CSV import ───────────────────────────────────
@@ -595,6 +602,17 @@ app.layout = html.Div(
             children=html.Div(
                 id="fundamentals-section",
                 style={**CONTAINER, "padding": "0.5em 1em 1em"},
+            ),
+        ),
+
+        # ── Sector / Country mix section ─────────────────────────────────────────
+        dcc.Loading(
+            id="loading-sector",
+            type="circle",
+            color=CYAN,
+            children=html.Div(
+                id="sector-section",
+                style={**CONTAINER, "padding": "0 1em 2em"},
             ),
         ),
 
@@ -879,13 +897,14 @@ def render_table(store):
     badge = f"Total: €{total:,.0f}"
     empty_style = {"display": "none"}
 
+    sorted_store = sorted(store, key=lambda r: float(str(r.get("total", 0)).replace(",", "")), reverse=True)
     display_rows = [
         {
             **r,
             "price": f"{float(r['price']):,.2f}",
             "total": f"{float(str(r['total']).replace(',', '')):,.0f}",
         }
-        for r in store
+        for r in sorted_store
     ]
     return display_rows, badge, empty_style
 
@@ -1224,6 +1243,8 @@ def _fetch_one(ticker: str) -> dict:
             # ── Display fields ──────────────────────────────────────────────
             "ticker":       ticker,
             "company":      info.get("shortName") or ticker,
+            "sector":       info.get("sector")    or "—",
+            "country":      info.get("country")   or "—",
             "pe":           _fmt(info.get("trailingPE")),
             "fwd_pe":       _fmt(info.get("forwardPE")),
             "ev_ebitda":    _fmt(info.get("enterpriseToEbitda")),
@@ -1720,6 +1741,94 @@ def build_correlation_fig(tickers: list, price_df=None) -> tuple:
     return fig, warn
 
 
+# ── Callback: Sector / Country pie charts ────────────────────────────────────────
+@app.callback(
+    Output("sector-section", "children"),
+    Input("fundamentals-store", "data"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def run_sector_pies(fund_data, store):
+    if not fund_data or not store:
+        return no_update
+    val_map   = {r["ticker"]: float(str(r.get("total", 0)).replace(",", "")) for r in store}
+    total_val = sum(val_map.values())
+    if total_val == 0:
+        return no_update
+
+    sector_w  = {}
+    country_w = {}
+    for row in fund_data:
+        t   = row.get("ticker", "")
+        val = val_map.get(t, 0)
+        if val == 0:
+            continue
+        s = row.get("sector")  or "Other"
+        c = row.get("country") or "Other"
+        if s == "\u2014": s = "Other"
+        if c == "\u2014": c = "Other"
+        sector_w[s]  = sector_w.get(s,  0) + val
+        country_w[c] = country_w.get(c, 0) + val
+
+    PIE_COLORS = [
+        CYAN, NAVY, "#059669", "#D97706", "#e63946",
+        "#6366f1", "#8b5cf6", "#f97316", "#14b8a6",
+        "#ec4899", "#84cc16", "#06b6d4", "#0ea5e9",
+    ]
+
+    def _make_pie(data_dict, title):
+        pairs = sorted(data_dict.items(), key=lambda x: x[1], reverse=True)
+        lbls  = [p[0] for p in pairs]
+        vals  = [p[1] for p in pairs]
+        fig   = go.Figure(go.Pie(
+            labels=lbls, values=vals, hole=0.42,
+            textinfo="label+percent",
+            textfont=dict(family=FONT, size=11),
+            hovertemplate="%{label}: \u20ac%{value:,.0f} (%{percent})<extra></extra>",
+            marker=dict(
+                colors=PIE_COLORS[:len(lbls)],
+                line=dict(color=WHITE, width=2),
+            ),
+            sort=False,
+        ))
+        fig.update_layout(
+            paper_bgcolor=WHITE, plot_bgcolor=WHITE,
+            font=dict(family=FONT, color="#111"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            height=320,
+            showlegend=False,
+            title=dict(text=title, font=dict(size=13, color=NAVY, family=FONT), x=0.5),
+        )
+        return fig
+
+    sector_fig  = _make_pie(sector_w,  "Sector Mix")
+    country_fig = _make_pie(country_w, "Country Mix")
+
+    return html.Div([
+        html.H4("Portfolio Composition",
+                style={"color": NAVY, "margin": "1.5em 0 0.3em 0"}),
+        html.P("Weighted by market value  \u00b7  data via Yahoo Finance",
+               style={"color": "#aaa", "fontSize": "0.82em", "marginBottom": "0.8em"}),
+        html.Div(
+            style={"display": "flex", "gap": "1.2em", "flexWrap": "wrap"},
+            children=[
+                html.Div(
+                    dcc.Graph(figure=sector_fig,  config={"displayModeBar": False}),
+                    style={"flex": "1", "minWidth": "280px", "background": WHITE,
+                           "borderRadius": "14px",
+                           "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "padding": "0.5em"},
+                ),
+                html.Div(
+                    dcc.Graph(figure=country_fig, config={"displayModeBar": False}),
+                    style={"flex": "1", "minWidth": "280px", "background": WHITE,
+                           "borderRadius": "14px",
+                           "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "padding": "0.5em"},
+                ),
+            ],
+        ),
+    ])
+
+
 # ── Callback: Correlation matrix ──────────────────────────────────────────────
 @app.callback(
     Output("correlation-section", "children"),
@@ -1743,24 +1852,77 @@ def run_correlation(price_data, store):
     if fig is None:
         return html.P(msg, style={"color": RED})
 
+    names_map = {r["ticker"]: r.get("company", r["ticker"]) for r in (store or [])}
+
+    # ── Compute correlation insights ──────────────────────────────────────────
+    high_corr_pairs = []
+    low_corr_anchor = []
+    try:
+        rets_tmp = price_df.pct_change(fill_method=None).dropna(how="all")
+        valid_c  = [c for c in rets_tmp.columns if rets_tmp[c].notna().sum() >= 60]
+        if len(valid_c) >= 2:
+            corr_m  = rets_tmp[valid_c].corr().round(2)
+            clabels = list(corr_m.columns)
+            for i, t1 in enumerate(clabels):
+                for j, t2 in enumerate(clabels):
+                    if j <= i:
+                        continue
+                    v = float(corr_m.loc[t1, t2])
+                    if not np.isnan(v) and v >= 0.70:
+                        high_corr_pairs.append((t1, t2, v))
+            high_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+            high_corr_pairs = high_corr_pairs[:6]
+            if store:
+                total_val_c = sum(r.get("total", 0) for r in store if r.get("ticker") in valid_c)
+                if total_val_c > 0:
+                    w_map = {r["ticker"]: r.get("total", 0) / total_val_c
+                             for r in store if r.get("ticker") in valid_c}
+                    avail = [c for c in valid_c if c in w_map]
+                    if len(avail) >= 2:
+                        port_rets = sum(rets_tmp[c].fillna(0) * w_map[c] for c in avail)
+                        port_rets = port_rets.replace(0, float("nan")).dropna()
+                        corr_with_port = {
+                            c: float(rets_tmp[c].reindex(port_rets.index).corr(port_rets))
+                            for c in avail
+                        }
+                        low_corr_anchor = sorted(
+                            [(t, v) for t, v in corr_with_port.items() if not np.isnan(v)],
+                            key=lambda x: x[1]
+                        )[:3]
+    except Exception:
+        pass
+
     interpretation = html.Div(
         style={"marginTop": "1.2em", "background": WHITE,
                "borderRadius": "12px", "padding": "1em 1.4em",
-               "boxShadow": "0 2px 8px rgba(0,0,0,0.05)", "fontSize": "0.86em", "color": "#555"},
+               "boxShadow": "0 2px 8px rgba(0,0,0,0.05)", "fontSize": "0.86em",
+               "color": "#555", "lineHeight": "1.7"},
         children=[
             html.Span("How to read: ", style={"fontWeight": "700", "color": NAVY}),
-            html.Span("1.0 = perfectly correlated (move in lockstep). "),
-            html.Span("0 = uncorrelated (no relationship). "),
-            html.Span("-1 = perfectly inverse. "),
-            html.Span("Pairs above 0.7 (", style={"color": "#2C3E50"}),
-            html.Span("dark grey", style={"color": "#2C3E50", "fontWeight": "700"}),
-            html.Span(") offer limited diversification benefit.", style={"color": "#2C3E50"}),
+            html.Span(
+                "Each cell shows the Pearson correlation of 2-year daily returns between two holdings, "
+                "ranging from \u22121 (perfect inverse) to +1 (perfect lockstep). "
+                "A value near 0 means the two assets move independently. "
+            ),
+            html.Span("Cyan cells ", style={"color": CYAN, "fontWeight": "700"}),
+            html.Span(
+                "(negative correlations) are the strongest diversifiers \u2014 they tend to rise when the "
+                "rest of the portfolio falls, actively reducing overall volatility. "
+            ),
+            html.Span("Dark grey cells ", style={"color": "#2C3E50", "fontWeight": "700"}),
+            html.Span(
+                "(\u22650.70) signal high overlap: both positions are driven by the same risk factors, "
+                "so holding both adds little genuine diversification. "
+                "Above 0.85, the two stocks behave almost identically from a risk standpoint \u2014 "
+                "you are concentrating exposure, not spreading it. "
+                "A well-diversified portfolio typically has an average pairwise correlation below 0.40."
+            ),
         ],
     )
 
     children = [
         html.H4("Correlation Matrix", style={"color": NAVY, "margin": "1.5em 0 0.3em 0"}),
-        html.P("2-year daily returns  ·  price data via Yahoo Finance",
+        html.P("2-year daily returns  \u00b7  price data via Yahoo Finance",
                style={"color": "#aaa", "fontSize": "0.82em", "marginBottom": "0.8em"}),
     ]
     if warn_div:
@@ -1772,44 +1934,60 @@ def run_correlation(price_data, store):
     ))
     children.append(interpretation)
 
-    # ── Stocks least correlated with overall portfolio ────────────────────────
-    try:
-        rets_tmp = price_df.pct_change(fill_method=None).dropna(how="all")
-        valid_c  = [c for c in rets_tmp.columns if rets_tmp[c].notna().sum() >= 60]
-        if len(valid_c) >= 2 and store:
-            total_val = sum(r.get("total", 0) for r in store if r.get("ticker") in valid_c)
-            w_map = {r["ticker"]: r.get("total", 0) / total_val
-                     for r in store if r.get("ticker") in valid_c and total_val > 0}
-            avail = [c for c in valid_c if c in w_map]
-            if len(avail) >= 2:
-                port_rets = sum(rets_tmp[c].fillna(0) * w_map[c] for c in avail)
-                port_rets = port_rets.replace(0, float("nan")).dropna()
-                corr_with_port = {
-                    c: float(rets_tmp[c].reindex(port_rets.index).corr(port_rets))
-                    for c in avail
-                }
-                sorted_corr = sorted(
-                    [(t, v) for t, v in corr_with_port.items() if not (v != v)],  # drop NaN
-                    key=lambda x: x[1]
-                )
-                top3 = sorted_corr[:3]
-                if top3:
-                    names_map = {r["ticker"]: r.get("company", r["ticker"]) for r in store}
-                    labels = [f"{names_map.get(t, t)} ({corr:.2f})" for t, corr in top3]
-                    sentence = (
-                        "The 3 holdings least correlated with your overall portfolio: "
-                        + ", ".join(labels) + "."
-                    )
-                    children.append(html.P(
-                        sentence,
-                        style={"marginTop": "1.2em", "fontSize": "0.88em",
-                               "color": "#555", "fontStyle": "italic",
-                               "lineHeight": "1.6", "padding": "0.8em 1.2em",
-                               "background": "#F7F8FA", "borderRadius": "10px",
-                               "borderLeft": "3px solid #059669"},
-                    ))
-    except Exception:
-        pass
+    if high_corr_pairs:
+        pair_rows = []
+        for t1, t2, v in high_corr_pairs:
+            n1 = names_map.get(t1, t1)
+            n2 = names_map.get(t2, t2)
+            c  = "#991b1b" if v >= 0.85 else "#D97706"
+            pair_rows.append(html.Div(
+                style={"display": "flex", "alignItems": "center", "padding": "0.35em 0",
+                       "borderBottom": f"1px solid {LGRAY}", "gap": "0.5em"},
+                children=[
+                    html.Span(f"{t1} \u00d7 {t2}",
+                              style={"fontWeight": "700", "color": NAVY,
+                                     "fontSize": "0.88em", "minWidth": "130px"}),
+                    html.Span(f"{n1}  \u00b7  {n2}",
+                              style={"color": "#9CA3AF", "fontSize": "0.80em", "flex": "1"}),
+                    html.Span(f"{v:.2f}",
+                              style={"fontWeight": "700", "color": c,
+                                     "fontSize": "0.92em", "minWidth": "3em",
+                                     "textAlign": "right"}),
+                ],
+            ))
+        children.append(html.Div(
+            style={"marginTop": "1.2em", "background": WHITE, "borderRadius": "12px",
+                   "padding": "1em 1.4em", "boxShadow": "0 2px 8px rgba(0,0,0,0.05)"},
+            children=[
+                html.Div(
+                    style={"display": "flex", "alignItems": "center",
+                           "gap": "0.5em", "marginBottom": "0.6em"},
+                    children=[
+                        html.Span("\u26a0\ufe0f"),
+                        html.Span("High-correlation pairs",
+                                  style={"fontWeight": "700", "color": NAVY,
+                                         "fontSize": "0.9em"}),
+                        html.Span("\u2265 0.70 \u2014 limited diversification benefit",
+                                  style={"color": "#9CA3AF", "fontSize": "0.80em"}),
+                    ],
+                ),
+                *pair_rows,
+            ],
+        ))
+
+    if low_corr_anchor:
+        lc_labels = [f"{names_map.get(t, t)} ({v:.2f})" for t, v in low_corr_anchor]
+        children.append(html.P(
+            "Best diversification anchors (least correlated with your overall portfolio): "
+            + ", ".join(lc_labels) + ". "
+            "These holdings tend to dampen drawdowns when the rest of the portfolio falls \u2014 "
+            "consider them your portfolio\u2019s shock absorbers.",
+            style={"marginTop": "1.2em", "fontSize": "0.88em",
+                   "color": "#555", "lineHeight": "1.6", "padding": "0.8em 1.2em",
+                   "background": "#F7F8FA", "borderRadius": "10px",
+                   "borderLeft": "3px solid #059669"},
+        ))
+
     return children
 
 
