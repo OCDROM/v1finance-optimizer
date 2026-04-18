@@ -328,14 +328,16 @@ app.layout = html.Div(
 
                 # ── Subtitle ──────────────────────────────────────────────────
                 html.P(
-                    "Know exactly what to rebalance, and why. Import your portfolio from Yahoo Finance to get started.",
+                    "Know exactly what to rebalance in your stock portfolio. Import your portfolio from Yahoo Finance to get started.",
                     style={
-                        "color": "#555",
-                        "marginBottom": "2em",
-                        "fontSize": "1.08em",
-                        "fontWeight": "500",
-                        "letterSpacing": "0.01em",
-                        "lineHeight": "1.6",
+                        "color": NAVY,
+                        "fontSize": "2em",
+                        "fontWeight": "700",
+                        "letterSpacing": "-0.02em",
+                        "lineHeight": "1.35",
+                        "textAlign": "center",
+                        "maxWidth": "780px",
+                        "margin": "0.5em auto 2em auto",
                     },
                 ),
 
@@ -353,7 +355,7 @@ app.layout = html.Div(
                         html.Div([
                             html.Span("Import from Yahoo Finance", style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
                             html.Span(
-                                " — export your portfolio on Yahoo Finance (Portfolio page → Download), then upload the CSV here.",
+                                " — on Yahoo Finance go to Portfolio → Download, then upload the CSV.",
                                 style={"color": "#888", "fontSize": "0.85em"},
                             ),
                         ], style={"flex": "1", "minWidth": "240px"}),
