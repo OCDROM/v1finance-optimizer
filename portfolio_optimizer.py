@@ -781,29 +781,37 @@ def refresh_trigger(n_clicks, current):
     return (current or 0) + 1
 
 
-# ── Callback: Show/hide emoji loading message ──────────────────────────────────
-@app.callback(
+# ── Clientside callback: Show/hide emoji loading message (instant — no server round-trip) ──
+app.clientside_callback(
+    """
+    function(n_clicks, frontier_data, fund_data) {
+        var hidden  = {display: "none"};
+        var visible = {display: "block", textAlign: "center",
+                       padding: "1.2em 1em 0.4em", width: "100%"};
+
+        var triggered = window.dash_clientside.callback_context.triggered;
+        if (!triggered || triggered.length === 0) return window.dash_clientside.no_update;
+
+        var tid = triggered[0].prop_id.split(".")[0];
+
+        if (tid === "refresh-btn") return visible;
+
+        // Primary: frontier arrived with real data (last section to finish)
+        if (tid === "frontier-store" && frontier_data && frontier_data.valid
+                && frontier_data.valid.length > 0) return hidden;
+
+        // Fallback: fundamentals arrived (covers <2 holdings / frontier error)
+        if (tid === "fundamentals-store" && fund_data && fund_data.length > 0) return hidden;
+
+        return window.dash_clientside.no_update;
+    }
+    """,
     Output("loading-emoji-msg", "style"),
     Input("refresh-btn",        "n_clicks"),
     Input("frontier-store",     "data"),
     Input("fundamentals-store", "data"),
     prevent_initial_call=True,
 )
-def toggle_loading_emoji(n_clicks, frontier_data, fund_data):
-    from dash import ctx
-    hidden  = {"display": "none"}
-    visible = {"display": "block", "textAlign": "center",
-                "padding": "1.2em 1em 0.4em", "width": "100%"}
-    tid = ctx.triggered_id
-    if tid == "refresh-btn":
-        return visible
-    # Primary: frontier completed with real data (last section to load)
-    if tid == "frontier-store" and isinstance(frontier_data, dict) and frontier_data.get("valid"):
-        return hidden
-    # Fallback: fundamentals arrived (covers case where frontier fails / <2 holdings)
-    if tid == "fundamentals-store" and fund_data:
-        return hidden
-    return no_update
 
 
 # ── Callback: Add / Delete → update store ─────────────────────────────────────
