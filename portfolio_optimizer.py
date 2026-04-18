@@ -681,6 +681,12 @@ app.layout = html.Div(
         # ── Frontier click card (populated when user clicks a dot) ──────────────
         html.Div(
             id="frontier-click-card",
+            style={**CONTAINER, "padding": "0 1em 1em"},
+        ),
+
+        # ── Frontier rebalance card (Max Sharpe / Min Variance buttons) ────────
+        html.Div(
+            id="frontier-rebalance-card",
             style={**CONTAINER, "padding": "0 1em 3em"},
         ),
 
@@ -2286,9 +2292,168 @@ def run_frontier(price_data, store):
                "boxShadow": "0 2px 12px rgba(0,0,0,0.06)", "padding": "1em"},
     ))
     children.append(interp)
+
+    # ── Two rebalancing buttons ──────────────────────────────────────────────
+    btn_base = {
+        "border": "none", "borderRadius": "10px", "padding": "0.75em 1.6em",
+        "fontSize": "0.95em", "fontWeight": "700", "cursor": "pointer",
+        "fontFamily": FONT, "letterSpacing": "0.01em",
+        "transition": "transform 0.15s, box-shadow 0.15s",
+    }
+    children.append(html.Div(
+        style={"display": "flex", "gap": "1em", "marginTop": "1.4em",
+               "justifyContent": "center", "flexWrap": "wrap"},
+        children=[
+            html.Button(
+                "★  Load Max Sharpe Portfolio",
+                id="btn-max-sharpe", n_clicks=0,
+                style={**btn_base, "background": "#f4a261", "color": NAVY,
+                       "boxShadow": "0 3px 10px rgba(244,162,97,0.35)"},
+            ),
+            html.Button(
+                "◆  Load Min Variance Portfolio",
+                id="btn-min-var", n_clicks=0,
+                style={**btn_base, "background": RED, "color": WHITE,
+                       "boxShadow": "0 3px 10px rgba(230,57,70,0.30)"},
+            ),
+        ],
+    ))
+
     frontier_store = {"valid": list(valid), "weights_ms": list(weights_ms),
                       "weights_mv": list(weights_mv), "cur_w": list(cur_w)}
     return children, frontier_store
+
+
+# ── Callback: Max Sharpe / Min Variance rebalancing cards ─────────────────────
+@app.callback(
+    Output("frontier-rebalance-card", "children"),
+    Input("btn-max-sharpe", "n_clicks"),
+    Input("btn-min-var",    "n_clicks"),
+    State("frontier-store",  "data"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def show_rebalance_card(ms_clicks, mv_clicks, frontier_store, store):
+    from dash import ctx
+    if not frontier_store or not frontier_store.get("valid") or not store:
+        return no_update
+
+    triggered = ctx.triggered_id
+    if triggered == "btn-max-sharpe":
+        target_w  = frontier_store["weights_ms"]
+        title     = "★  Max Sharpe Rebalancing Plan"
+        accent    = "#f4a261"
+        subtitle  = "Weights that maximise risk-adjusted return (Sharpe ratio)"
+    elif triggered == "btn-min-var":
+        target_w  = frontier_store["weights_mv"]
+        title     = "◆  Min Variance Rebalancing Plan"
+        accent    = RED
+        subtitle  = "Weights that minimise portfolio volatility"
+    else:
+        return no_update
+
+    valid     = frontier_store["valid"]
+    cur_w     = frontier_store["cur_w"]
+    val_map   = {r["ticker"]: float(str(r.get("total", 0)).replace(",", "")) for r in store}
+    name_map  = {r["ticker"]: r.get("company", r["ticker"]) for r in store}
+    total_val = sum(val_map.get(t, 0) for t in valid)
+    if total_val == 0:
+        return no_update
+
+    hdr = {**TABLE_HEADER, "textAlign": "center", "padding": "0.5em 0.8em",
+           "whiteSpace": "nowrap"}
+    rows = []
+    for i, t in enumerate(valid):
+        cur_pct  = round(float(cur_w[i])      * 100, 1)
+        tgt_pct  = round(float(target_w[i])   * 100, 1)
+        delta    = round(tgt_pct - cur_pct, 1)
+        cur_val  = val_map.get(t, 0)
+        tgt_val  = total_val * float(target_w[i])
+        diff_val = tgt_val - cur_val
+
+        if delta > 0.5:
+            delta_txt   = f"↑ +{delta:.1f}%"
+            delta_color = "#166534"
+        elif delta < -0.5:
+            delta_txt   = f"↓ {delta:.1f}%"
+            delta_color = "#991b1b"
+        else:
+            delta_txt   = "≈ Hold"
+            delta_color = "#888"
+
+        if diff_val > 5:
+            action_txt   = f"Buy  +{diff_val:,.0f}"
+            action_color = "#166534"
+            action_bg    = "#f0fdf4"
+        elif diff_val < -5:
+            action_txt   = f"Sell  {diff_val:,.0f}"
+            action_color = "#991b1b"
+            action_bg    = "#fff1f2"
+        else:
+            action_txt   = "Hold"
+            action_color = "#888"
+            action_bg    = BG
+
+        bg = WHITE if i % 2 == 0 else BG
+        rows.append(html.Tr([
+            html.Td(html.Div([
+                html.Span(t, style={"fontWeight": "700", "color": NAVY,
+                                     "display": "block", "fontSize": "0.9em"}),
+                html.Span(name_map.get(t, ""), style={"color": "#9CA3AF",
+                                                       "fontSize": "0.76em"}),
+            ]), style={"padding": "0.45em 0.8em", "background": bg}),
+            html.Td(f"{cur_pct:.1f}%",  style={"textAlign": "center", "padding": "0.45em 0.8em",
+                                                 "background": bg, "color": "#555",
+                                                 "fontSize": "0.88em"}),
+            html.Td(f"{tgt_pct:.1f}%",  style={"textAlign": "center", "padding": "0.45em 0.8em",
+                                                 "background": bg, "fontWeight": "700",
+                                                 "color": NAVY, "fontSize": "0.88em"}),
+            html.Td(delta_txt,           style={"textAlign": "center", "padding": "0.45em 0.8em",
+                                                 "background": bg, "fontWeight": "700",
+                                                 "color": delta_color, "fontSize": "0.88em"}),
+            html.Td(action_txt,          style={"textAlign": "center", "padding": "0.45em 0.8em",
+                                                 "background": action_bg, "fontWeight": "700",
+                                                 "color": action_color, "fontSize": "0.88em",
+                                                 "borderRadius": "6px"}),
+        ]))
+
+    table = html.Div(
+        html.Table(
+            [
+                html.Thead(html.Tr([
+                    html.Th("Holding",       style={**hdr, "textAlign": "left"}),
+                    html.Th("Current",       style=hdr),
+                    html.Th("Target",        style=hdr),
+                    html.Th("Δ Weight",      style=hdr),
+                    html.Th("Action",        style=hdr),
+                ])),
+                html.Tbody(rows),
+            ],
+            style={"width": "100%", "borderCollapse": "collapse"},
+        ),
+        style={"overflowX": "auto", "borderRadius": "12px", "background": WHITE,
+               "boxShadow": "0 2px 12px rgba(0,0,0,0.06)"},
+    )
+
+    note = html.P(
+        "Action amounts are based on your current portfolio value. "
+        "Treat as directional guidance — not financial advice.",
+        style={"color": "#9CA3AF", "fontSize": "0.80em", "marginTop": "0.8em",
+               "fontStyle": "italic"},
+    )
+
+    return html.Div(
+        style={**CARD_STYLE, "padding": "1.4em 1.6em", "marginTop": "1.2em",
+               "borderLeft": f"4px solid {accent}", "animation": "fadeUp 0.35s ease both"},
+        className="reveal-card",
+        children=[
+            html.H4(title,    style={"color": NAVY, "margin": "0 0 0.2em 0"}),
+            html.P(subtitle,  style={"color": "#9CA3AF", "fontSize": "0.83em",
+                                     "margin": "0 0 1em 0"}),
+            table,
+            note,
+        ],
+    )
 
 
 # ── Callback: Frontier click card ──────────────────────────────────────────────
