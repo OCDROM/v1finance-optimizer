@@ -56,6 +56,23 @@ app.index_string = """<!DOCTYPE html>
         *, *::before, *::after { box-sizing: border-box; }
         body { margin: 0; -webkit-font-smoothing: antialiased; overscroll-behavior-y: none; }
 
+        /* ── Emoji loading cycle ─────────────────────────────────────── */
+        @keyframes emojiPop {
+            0%,100% { opacity:0; transform:scale(0.7) translateY(6px); }
+            15%,75% { opacity:1; transform:scale(1)   translateY(0);   }
+        }
+        .emoji-cycle { display:flex; gap:0.6em; justify-content:center;
+                        font-size:2em; margin:0.4em 0; }
+        .emoji-cycle span { opacity:0; animation:emojiPop 4.8s infinite ease-in-out; }
+        .emoji-cycle span:nth-child(1) { animation-delay:0.0s; }
+        .emoji-cycle span:nth-child(2) { animation-delay:0.6s; }
+        .emoji-cycle span:nth-child(3) { animation-delay:1.2s; }
+        .emoji-cycle span:nth-child(4) { animation-delay:1.8s; }
+        .emoji-cycle span:nth-child(5) { animation-delay:2.4s; }
+        .emoji-cycle span:nth-child(6) { animation-delay:3.0s; }
+        .emoji-cycle span:nth-child(7) { animation-delay:3.6s; }
+        .emoji-cycle span:nth-child(8) { animation-delay:4.2s; }
+
         /* ── Scroll-reveal animations ──────────────────────────────── */
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(18px); }
@@ -519,6 +536,23 @@ app.layout = html.Div(
             ],
         ),
 
+        # ── Emoji loading message (shown while data is fetching) ──────────────
+        html.Div(
+            id="loading-emoji-msg",
+            style={"display": "none", "textAlign": "center",
+                   "padding": "2.5em 1em", "animation": "fadeUp 0.4s ease both"},
+            children=[
+                html.Div(className="emoji-cycle", children=[
+                    html.Span("📊"), html.Span("📈"), html.Span("🔍"),
+                    html.Span("💹"), html.Span("⚖️"), html.Span("💰"),
+                    html.Span("🎯"), html.Span("🧮"),
+                ]),
+                html.P("Fetching live data from Yahoo Finance…",
+                       style={"color": "#9CA3AF", "fontSize": "0.9em",
+                              "marginTop": "0.8em", "fontStyle": "italic"}),
+            ],
+        ),
+
         # ── Fundamentals tab bar (initially hidden, shown after pull) ────────────
         html.Div(
             id="fund-tab-container",
@@ -732,6 +766,23 @@ def refresh_trigger(n_clicks, current):
     if not n_clicks:
         return no_update
     return (current or 0) + 1
+
+
+# ── Callback: Show/hide emoji loading message ──────────────────────────────────
+@app.callback(
+    Output("loading-emoji-msg", "style"),
+    Input("refresh-btn",        "n_clicks"),
+    Input("fundamentals-store", "data"),
+    prevent_initial_call=True,
+)
+def toggle_loading_emoji(n_clicks, fund_data):
+    from dash import ctx
+    hidden  = {"display": "none"}
+    visible = {"display": "block", "textAlign": "center",
+                "padding": "2.5em 1em", "animation": "fadeUp 0.4s ease both"}
+    if ctx.triggered_id == "refresh-btn":
+        return visible
+    return hidden  # fundamentals arrived → hide
 
 
 # ── Callback: Add / Delete → update store ─────────────────────────────────────
