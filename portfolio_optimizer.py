@@ -786,16 +786,24 @@ def refresh_trigger(n_clicks, current):
     Output("loading-emoji-msg", "style"),
     Input("refresh-btn",        "n_clicks"),
     Input("frontier-store",     "data"),
+    Input("fundamentals-store", "data"),
     prevent_initial_call=True,
 )
-def toggle_loading_emoji(n_clicks, fund_data):
+def toggle_loading_emoji(n_clicks, frontier_data, fund_data):
     from dash import ctx
     hidden  = {"display": "none"}
     visible = {"display": "block", "textAlign": "center",
                 "padding": "1.2em 1em 0.4em", "width": "100%"}
-    if ctx.triggered_id == "refresh-btn":
+    tid = ctx.triggered_id
+    if tid == "refresh-btn":
         return visible
-    return hidden  # frontier arrived (last section) → hide
+    # Primary: frontier completed with real data (last section to load)
+    if tid == "frontier-store" and isinstance(frontier_data, dict) and frontier_data.get("valid"):
+        return hidden
+    # Fallback: fundamentals arrived (covers case where frontier fails / <2 holdings)
+    if tid == "fundamentals-store" and fund_data:
+        return hidden
+    return no_update
 
 
 # ── Callback: Add / Delete → update store ─────────────────────────────────────
@@ -1690,6 +1698,75 @@ def render_fund_table(tab, rows, factor_scores):
                 style_data_conditional=score_cond,
                 page_action="none",
                 editable=False,
+            ),
+            # ── Factor score interpretation guide ──────────────────────────
+            html.Div(
+                style={"marginTop": "1.4em", "background": WHITE, "borderRadius": "14px",
+                       "padding": "1.2em 1.6em",
+                       "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
+                       "fontSize": "0.86em", "color": "#555", "lineHeight": "1.75"},
+                children=[
+                    html.Div(
+                        style={"display": "flex", "alignItems": "center",
+                               "gap": "0.5em", "marginBottom": "0.8em"},
+                        children=[
+                            html.Span("How to interpret factor scores",
+                                      style={"fontWeight": "700", "color": NAVY,
+                                             "fontSize": "0.95em"}),
+                            html.Span("· scores are percentile-ranked within your portfolio (0 = weakest, 100 = strongest)",
+                                      style={"color": "#9CA3AF", "fontSize": "0.82em"}),
+                        ],
+                    ),
+                    html.Div(
+                        style={"display": "grid",
+                               "gridTemplateColumns": "repeat(auto-fit, minmax(260px, 1fr))",
+                               "gap": "0.8em"},
+                        children=[
+                            html.Div([
+                                html.Span("💰 Value  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Low P/E, P/B and P/S relative to peers. "
+                                          "A high score means the stock looks cheap on fundamentals — "
+                                          "potential upside if the market re-rates it."),
+                            ]),
+                            html.Div([
+                                html.Span("🏛 Quality  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Strong return on equity, healthy margins and low debt. "
+                                          "High-quality companies tend to compound returns steadily "
+                                          "and hold up better in downturns."),
+                            ]),
+                            html.Div([
+                                html.Span("📈 Growth  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Revenue and earnings expanding faster than peers. "
+                                          "High scores suit investors willing to pay a premium "
+                                          "for compounding future cash flows."),
+                            ]),
+                            html.Div([
+                                html.Span("🚀 Momentum  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Recent price performance relative to the portfolio. "
+                                          "Stocks with strong momentum tend to keep outperforming "
+                                          "in the short term — but watch for reversals."),
+                            ]),
+                            html.Div([
+                                html.Span("🛡 Low Vol  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Lower realised volatility than peers. "
+                                          "A high score means smoother returns — "
+                                          "useful for reducing portfolio drawdowns without sacrificing too much upside."),
+                            ]),
+                            html.Div([
+                                html.Span("⭐ Overall  ", style={"fontWeight": "700", "color": NAVY}),
+                                html.Span("Equal-weighted average of all five factors. "
+                                          "Use it as a quick composite signal: scores above 60 are solid across the board, "
+                                          "below 40 flag holdings worth reviewing."),
+                            ]),
+                        ],
+                    ),
+                    html.P(
+                        "Scores are relative to your current portfolio — not the broader market. "
+                        "A score of 80 means that stock ranks in the top 20% of your holdings on that factor.",
+                        style={"marginTop": "0.9em", "color": "#9CA3AF",
+                               "fontSize": "0.82em", "fontStyle": "italic"},
+                    ),
+                ],
             ),
         ], style={"margin": "0 0 2em"})
 
