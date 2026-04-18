@@ -1755,8 +1755,8 @@ def render_fund_table(tab, rows, factor_scores):
                             html.Div([
                                 html.Span("⭐ Overall  ", style={"fontWeight": "700", "color": NAVY}),
                                 html.Span("Equal-weighted average of all five factors. "
-                                          "Use it as a quick composite signal: scores above 60 are solid across the board, "
-                                          "below 40 flag holdings worth reviewing."),
+                                          "Use it as a quick composite signal: scores above 6.0 are solid across the board, "
+                                          "below 4.0 flag holdings worth reviewing."),
                             ]),
                         ],
                     ),
