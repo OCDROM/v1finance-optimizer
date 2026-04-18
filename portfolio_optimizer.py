@@ -61,6 +61,13 @@ app.index_string = """<!DOCTYPE html>
             0%,100% { opacity:0; transform:scale(0.7) translateY(6px); }
             15%,75% { opacity:1; transform:scale(1)   translateY(0);   }
         }
+        #refresh-btn:active { transform: scale(0.97); opacity: 0.85; }
+        #refresh-btn.btn-loading { background: #0a2540 !important; opacity: 0.72;
+            cursor: not-allowed; animation: btnPulse 1.2s ease-in-out infinite; }
+        @keyframes btnPulse {
+            0%,100% { box-shadow: 0 0 0 0 rgba(0,212,229,0.0); }
+            50%      { box-shadow: 0 0 0 8px rgba(0,212,229,0.22); }
+        }
         .emoji-cycle { display:flex; gap:0.6em; justify-content:center;
                         font-size:2em; margin:0.4em 0; }
         .emoji-cycle span { opacity:0; animation:emojiPop 4.8s infinite ease-in-out; }
@@ -781,7 +788,7 @@ def refresh_trigger(n_clicks, current):
     return (current or 0) + 1
 
 
-# ── Clientside callback: Show/hide emoji loading message (instant — no server round-trip) ──
+# ── Clientside callback: Emoji visibility + button loading state (instant — no server round-trip) ──
 app.clientside_callback(
     """
     function(n_clicks, frontier_data, fund_data) {
@@ -790,23 +797,49 @@ app.clientside_callback(
                        padding: "1.2em 1em 0.4em", width: "100%"};
 
         var triggered = window.dash_clientside.callback_context.triggered;
-        if (!triggered || triggered.length === 0) return window.dash_clientside.no_update;
+        if (!triggered || triggered.length === 0)
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
 
         var tid = triggered[0].prop_id.split(".")[0];
+        var btn = document.getElementById("refresh-btn");
 
-        if (tid === "refresh-btn") return visible;
+        if (tid === "refresh-btn") {
+            // Instantly show loading state on the button
+            if (btn) {
+                btn.classList.add("btn-loading");
+                btn.disabled = true;
+                btn.textContent = "⟳ Fetching…";
+            }
+            return [visible, window.dash_clientside.no_update];
+        }
+
+        // Helper: restore button to normal
+        function restoreBtn() {
+            if (btn) {
+                btn.classList.remove("btn-loading");
+                btn.disabled = false;
+                btn.textContent = "↺ Refresh Analysis";
+            }
+        }
 
         // Primary: frontier arrived with real data (last section to finish)
         if (tid === "frontier-store" && frontier_data && frontier_data.valid
-                && frontier_data.valid.length > 0) return hidden;
+                && frontier_data.valid.length > 0) {
+            restoreBtn();
+            return [hidden, window.dash_clientside.no_update];
+        }
 
         // Fallback: fundamentals arrived (covers <2 holdings / frontier error)
-        if (tid === "fundamentals-store" && fund_data && fund_data.length > 0) return hidden;
+        if (tid === "fundamentals-store" && fund_data && fund_data.length > 0) {
+            restoreBtn();
+            return [hidden, window.dash_clientside.no_update];
+        }
 
-        return window.dash_clientside.no_update;
+        return [window.dash_clientside.no_update, window.dash_clientside.no_update];
     }
     """,
     Output("loading-emoji-msg", "style"),
+    Output("refresh-btn",       "style"),
     Input("refresh-btn",        "n_clicks"),
     Input("frontier-store",     "data"),
     Input("fundamentals-store", "data"),
