@@ -1873,12 +1873,13 @@ def build_correlation_fig(tickers: list, price_df=None) -> tuple:
     # Annotation text matrix
     text = [[f"{v:.2f}" for v in row] for row in corr.values]
 
-    # Colorscale: -1→0 = flat cyan, 0→+0.5 = cyan→white, +0.5→+1 = white→dark grey
+    # Green = diversifying (negative), white = neutral, red = highly correlated (positive)
     colorscale = [
-        [0.0,  CYAN],      # -1  → cyan
-        [0.5,  CYAN],      #  0  → cyan (neutral stays cyan)
-        [0.75, WHITE],     # +0.5 → white
-        [1.0,  "#2C3E50"], # +1  → dark grey
+        [0.0,  "#059669"],  # -1 → emerald green
+        [0.375, "#d1fae5"], # -0.25 → light green
+        [0.5,  WHITE],      #  0 → white
+        [0.625, "#fecaca"], # +0.25 → light red
+        [1.0,  "#dc2626"],  # +1 → strong red
     ]
 
     fig = go.Figure(go.Heatmap(
