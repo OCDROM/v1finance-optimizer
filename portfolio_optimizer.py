@@ -692,12 +692,6 @@ app.layout = html.Div(
             ),
         ),
 
-        # ── Frontier click card (populated when user clicks a dot) ──────────────
-        html.Div(
-            id="frontier-click-card",
-            style={**CONTAINER, "padding": "0 1em 1em"},
-        ),
-
         # ── Frontier rebalance card (Max Sharpe / Min Variance buttons) ────────
         html.Div(
             id="frontier-rebalance-card",
@@ -2579,86 +2573,6 @@ def show_rebalance_card(ms_clicks, mv_clicks, frontier_store, store):
             note,
         ],
     )
-
-
-# ── Callback: Frontier click card ──────────────────────────────────────────────
-@app.callback(
-    Output("frontier-click-card", "children"),
-    Input("frontier-graph", "clickData"),
-    State("frontier-store", "data"),
-    State("portfolio-store", "data"),
-    prevent_initial_call=True,
-)
-def frontier_click(click_data, frontier_store, portfolio):
-    if not click_data or not frontier_store or not frontier_store.get("valid"):
-        return no_update
-    pt = click_data["points"][0]
-    # Only respond to clicks on the simulated portfolios scatter (trace 0)
-    if pt.get("curveNumber", -1) != 0:
-        return no_update
-    click_vol = pt["x"]
-    click_ret = pt["y"]
-    valid     = frontier_store["valid"]
-    val_map   = {r["ticker"]: r.get("total", 0) for r in (portfolio or [])}
-    total_val = sum(val_map.values())
-
-    # Show closest portfolio composition from frontier-store (ms or mv)
-    # We show both for comparison
-    ms_weights = frontier_store.get("weights_ms", [])
-    mv_weights = frontier_store.get("weights_mv", [])
-
-    def _weight_row(ticker, cur_w, ms_w, mv_w):
-        delta_ms = round(ms_w - cur_w, 1)
-        arrow = ("↑" if delta_ms > 1 else ("↓" if delta_ms < -1 else "—"))
-        arrow_color = EMERALD if arrow == "↑" else (RED if arrow == "↓" else "#888")
-        return html.Tr([
-            html.Td(ticker, style={"padding": "0.35em 0.7em", "fontWeight": "700",
-                                   "color": NAVY, "fontSize": "0.85em"}),
-            html.Td(f"{cur_w:.1f}%", style={"textAlign": "right", "padding": "0.35em 0.7em",
-                                             "fontSize": "0.85em"}),
-            html.Td(f"{ms_w:.1f}%", style={"textAlign": "right", "padding": "0.35em 0.7em",
-                                            "fontWeight": "700", "color": NAVY, "fontSize": "0.85em"}),
-            html.Td(arrow, style={"textAlign": "center", "padding": "0.35em 0.7em",
-                                  "fontWeight": "700", "color": arrow_color, "fontSize": "0.9em"}),
-        ])
-
-    cur_weights = frontier_store.get("cur_w", [0] * len(valid))
-    rows = [_weight_row(
-        valid[i],
-        round(float(cur_weights[i]) * 100, 1) if cur_weights else 0,
-        round(float(ms_weights[i]) * 100, 1) if ms_weights else 0,
-        round(float(mv_weights[i]) * 100, 1) if mv_weights else 0,
-    ) for i in range(len(valid))]
-
-    card = html.Div(
-        style={**CARD_STYLE, **CONTAINER, "padding": "1.2em 1.4em", "marginTop": "1em",
-               "borderLeft": f"4px solid {CYAN}"},
-        className="reveal-card",
-        children=[
-            html.Div(
-                style={"display": "flex", "justifyContent": "space-between",
-                       "alignItems": "center", "marginBottom": "0.8em"},
-                children=[
-                    html.H4("Max Sharpe Rebalancing", style={"color": NAVY, "margin": 0}),
-                    html.Span(
-                        f"Clicked: Vol {click_vol:.1f}%  Return {click_ret:.1f}%",
-                        style={"color": "#aaa", "fontSize": "0.8em"},
-                    ),
-                ],
-            ),
-            html.Table(
-                [html.Thead(html.Tr([
-                    html.Th("Ticker",   style={"textAlign": "left",  **TABLE_HEADER, "padding": "0.35em 0.7em"}),
-                    html.Th("Current",  style={"textAlign": "right", **TABLE_HEADER, "padding": "0.35em 0.7em"}),
-                    html.Th("Max Sharpe", style={"textAlign": "right", **TABLE_HEADER, "padding": "0.35em 0.7em"}),
-                    html.Th("Δ", style={"textAlign": "center", **TABLE_HEADER, "padding": "0.35em 0.7em"}),
-                ])),
-                 html.Tbody(rows)],
-                style={"width": "100%", "borderCollapse": "collapse"},
-            ),
-        ],
-    )
-    return card
 
 
 # ── Run ────────────────────────────────────────────────────────────────────────
