@@ -2,7 +2,7 @@ import base64
 import io
 import os
 import dash
-from dash import dcc, html, dash_table, Input, Output, State, ctx, no_update
+from dash import dcc, html, dash_table, Input, Output, State, ctx, no_update, ALL
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -1740,6 +1740,61 @@ def render_fund_table(tab, rows, factor_scores):
                 page_action="none",
                 editable=False,
             ),
+            # ── Weak stock callout ─────────────────────────────────────────
+            *([html.Div(
+                style={
+                    "marginTop": "1.4em",
+                    "background": "#FFFBEB",
+                    "border": f"1px solid {AMBER}",
+                    "borderRadius": "14px",
+                    "padding": "1.1em 1.5em",
+                },
+                children=[
+                    html.Div(
+                        style={"display": "flex", "alignItems": "baseline",
+                               "gap": "0.6em", "marginBottom": "0.5em"},
+                        children=[
+                            html.Span("⚠️ Low-quality holdings",
+                                      style={"fontWeight": "700", "color": NAVY,
+                                             "fontSize": "0.95em"}),
+                            html.Span("scoring below 4 / 10 on fundamentals",
+                                      style={"color": "#92400E", "fontSize": "0.82em"}),
+                        ],
+                    ),
+                    html.P(
+                        "These holdings rank in the bottom 40% of your portfolio. "
+                        "Consider removing them, then click ↺ Refresh Analysis to re-optimize.",
+                        style={"color": "#92400E", "fontSize": "0.85em",
+                               "margin": "0 0 0.9em 0", "lineHeight": "1.55"},
+                    ),
+                    html.Div(
+                        style={"display": "flex", "flexWrap": "wrap", "gap": "0.5em"},
+                        children=[
+                            html.Button(
+                                f"{r['ticker']} ×",
+                                id={"type": "remove-weak-btn", "index": r["ticker"]},
+                                n_clicks=0,
+                                style={
+                                    "background": WHITE,
+                                    "border": f"1.5px solid {AMBER}",
+                                    "borderRadius": "999px",
+                                    "padding": "0.25em 1em",
+                                    "fontWeight": "700",
+                                    "fontSize": "0.88em",
+                                    "color": NAVY,
+                                    "cursor": "pointer",
+                                    "fontFamily": FONT,
+                                    "transition": "background 0.15s ease, color 0.15s ease",
+                                },
+                            )
+                            for r in [s for s in factor_scores
+                                      if isinstance(s.get("overall"), float)
+                                      and s["overall"] < 4.0]
+                        ],
+                    ),
+                ],
+            )] if any(isinstance(s.get("overall"), float) and s["overall"] < 4.0
+                      for s in factor_scores) else []),
             # ── Factor score interpretation guide ──────────────────────────
             html.Div(
                 style={"marginTop": "1.4em", "background": WHITE, "borderRadius": "14px",
@@ -1842,6 +1897,19 @@ def render_fund_table(tab, rows, factor_scores):
         ),
     ]
 
+
+# ── Callback: Remove a weak stock from portfolio via factor-scores callout ────
+@app.callback(
+    Output("portfolio-store", "data", allow_duplicate=True),
+    Input({"type": "remove-weak-btn", "index": ALL}, "n_clicks"),
+    State("portfolio-store", "data"),
+    prevent_initial_call=True,
+)
+def remove_weak_stock(n_clicks_list, store):
+    if not any(n for n in n_clicks_list if n):
+        return no_update
+    ticker = ctx.triggered_id["index"]
+    return [r for r in store if r["ticker"] != ticker]
 
 
 # ── Correlation helpers ─────────────────────────────────────────────────────
