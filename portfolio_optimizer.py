@@ -730,14 +730,13 @@ def recalc_weights(rows):
 # ── Callback: auto-load default portfolio on page load ────────────────────────
 @app.callback(
     Output("portfolio-store",  "data", allow_duplicate=True),
-    Output("analyse-trigger",  "data", allow_duplicate=True),
     Input("init-interval", "n_intervals"),
     State("portfolio-store", "data"),
     prevent_initial_call=True,
 )
 def load_default_portfolio(_, store):
     if store:          # already populated (e.g. user added tickers before interval fired)
-        return no_update, no_update
+        return no_update
 
     def _fetch(ticker, qty):
         try:
@@ -759,7 +758,7 @@ def load_default_portfolio(_, store):
     order = {t: i for i, (t, _) in enumerate(DEFAULT_HOLDINGS)}
     rows.sort(key=lambda r: order.get(r["ticker"], 999))
     rows, _ = recalc_weights(rows)
-    return rows, 1
+    return rows
 
 
 # ── Callback: Refresh button ── increment analyse-trigger ──────────────────────
