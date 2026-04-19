@@ -2151,21 +2151,15 @@ def run_correlation(price_data, store):
         pair_card = html.Div(
             style={**CARD_STYLE, "flex": "1", "minWidth": "260px"},
             children=[
-                html.Div(
-                    style={"display": "flex", "alignItems": "center",
-                           "gap": "0.5em", "marginBottom": "1em"},
-                    children=[
-                        html.Span("⚠️", style={"fontSize": "1em"}),
-                        html.Span("Most correlated pair",
-                                  style={"fontWeight": "700", "color": NAVY,
-                                         "fontSize": "0.88em",
-                                         "textTransform": "uppercase",
-                                         "letterSpacing": "0.05em"}),
-                    ],
-                ),
+                html.Span("Most correlated pair",
+                          style={"fontWeight": "700", "color": NAVY,
+                                 "fontSize": "0.88em",
+                                 "textTransform": "uppercase",
+                                 "letterSpacing": "0.05em",
+                                 "display": "block", "marginBottom": "1em"}),
                 html.Div(
                     style={"display": "flex", "alignItems": "baseline",
-                           "justifyContent": "space-between", "marginBottom": "0.15em"},
+                           "justifyContent": "space-between", "marginBottom": "1em"},
                     children=[
                         html.Span(f"{t1} × {t2}",
                                   style={"fontWeight": "800", "color": NAVY,
@@ -2174,11 +2168,6 @@ def run_correlation(price_data, store):
                                   style={"fontWeight": "800", "color": pair_color,
                                          "fontSize": "1.8em", "lineHeight": "1"}),
                     ],
-                ),
-                html.Div(
-                    f"{names_map.get(t1, t1)}  ·  {names_map.get(t2, t2)}",
-                    style={"color": "#9CA3AF", "fontSize": "0.80em",
-                           "marginBottom": "1em", "lineHeight": "1.4"},
                 ),
                 html.Span(
                     pair_label,
@@ -2200,7 +2189,6 @@ def run_correlation(price_data, store):
     if low_anchors:
         chips = []
         for t, v in low_anchors:
-            chip_color = EMERALD if v < 0.4 else (AMBER if v < 0.65 else "#6B7280")
             chips.append(html.Div(
                 style={
                     "background": "#F0FDF4",
@@ -2212,36 +2200,27 @@ def run_correlation(price_data, store):
                     "display": "flex",
                     "flexDirection": "column",
                     "alignItems": "center",
-                    "gap": "0.15em",
+                    "gap": "0.25em",
                     "textAlign": "center",
                 },
                 children=[
                     html.Span(t, style={"fontWeight": "800", "color": NAVY,
                                        "fontSize": "0.95em"}),
-                    html.Span(names_map.get(t, t),
-                              style={"color": "#9CA3AF", "fontSize": "0.74em",
-                                     "lineHeight": "1.3"}),
                     html.Span(f"ρ {v:+.2f}",
-                              style={"fontWeight": "700", "color": chip_color,
-                                     "fontSize": "0.88em", "marginTop": "0.3em"}),
+                              style={"fontWeight": "700", "color": EMERALD,
+                                     "fontSize": "0.88em"}),
                 ],
             ))
 
         anchor_card = html.Div(
             style={**CARD_STYLE, "flex": "1", "minWidth": "260px"},
             children=[
-                html.Div(
-                    style={"display": "flex", "alignItems": "center",
-                           "gap": "0.5em", "marginBottom": "0.5em"},
-                    children=[
-                        html.Span("🛡️", style={"fontSize": "1em"}),
-                        html.Span("Best diversifiers",
-                                  style={"fontWeight": "700", "color": NAVY,
-                                         "fontSize": "0.88em",
-                                         "textTransform": "uppercase",
-                                         "letterSpacing": "0.05em"}),
-                    ],
-                ),
+                html.Span("Best diversifiers",
+                          style={"fontWeight": "700", "color": NAVY,
+                                 "fontSize": "0.88em",
+                                 "textTransform": "uppercase",
+                                 "letterSpacing": "0.05em",
+                                 "display": "block", "marginBottom": "0.5em"}),
                 html.P(
                     "Least correlated with your overall portfolio.",
                     style={"color": "#9CA3AF", "fontSize": "0.82em",
