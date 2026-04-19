@@ -1707,7 +1707,7 @@ def compute_factor_scores_cb(fund_data, price_data):
     Output("fundamentals-section", "children"),
     Input("fund-tab",              "value"),
     Input("fundamentals-store",    "data"),
-    State("factor-scores-store",   "data"),
+    Input("factor-scores-store",   "data"),
     prevent_initial_call=True,
 )
 def render_fund_table(tab, rows, factor_scores):
@@ -1820,39 +1820,27 @@ def render_fund_table(tab, rows, factor_scores):
                         children=[
                             html.Div([
                                 html.Span("💰 Value  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Low P/E, P/B and P/S relative to peers. "
-                                          "A high score means the stock looks cheap on fundamentals — "
-                                          "potential upside if the market re-rates it."),
+                                html.Span("Cheap on P/E, P/B, P/S vs. peers. High = potential upside if market re-rates."),
                             ]),
                             html.Div([
                                 html.Span("🏛 Quality  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Strong return on equity, healthy margins and low debt. "
-                                          "High-quality companies tend to compound returns steadily "
-                                          "and hold up better in downturns."),
+                                html.Span("Strong ROE, margins, low debt. Compounds steadily, holds up in downturns."),
                             ]),
                             html.Div([
                                 html.Span("📈 Growth  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Revenue and earnings expanding faster than peers. "
-                                          "High scores suit investors willing to pay a premium "
-                                          "for compounding future cash flows."),
+                                html.Span("Revenue and earnings expanding faster than peers (1Y + 3Y CAGR)."),
                             ]),
                             html.Div([
                                 html.Span("🚀 Momentum  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Recent price performance relative to the portfolio. "
-                                          "Stocks with strong momentum tend to keep outperforming "
-                                          "in the short term — but watch for reversals."),
+                                html.Span("12-1 month price return vs. peers. Tends to persist short-term."),
                             ]),
                             html.Div([
                                 html.Span("🛡 Low Vol  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Lower realised volatility than peers. "
-                                          "A high score means smoother returns — "
-                                          "useful for reducing portfolio drawdowns without sacrificing too much upside."),
+                                html.Span("Lower realised volatility. Smoother ride, smaller drawdowns."),
                             ]),
                             html.Div([
                                 html.Span("⭐ Overall  ", style={"fontWeight": "700", "color": NAVY}),
-                                html.Span("Equal-weighted average of all five factors. "
-                                          "Use it as a quick composite signal: scores above 6.0 are solid across the board, "
-                                          "below 4.0 flag holdings worth reviewing."),
+                                html.Span("Composite (Quality ×2, others ×1.5). Above 6 = solid. Below 4 = review."),
                             ]),
                         ],
                     ),
@@ -1900,16 +1888,22 @@ def render_fund_table(tab, rows, factor_scores):
 
 # ── Callback: Remove a weak stock from portfolio via factor-scores callout ────
 @app.callback(
-    Output("portfolio-store", "data", allow_duplicate=True),
+    Output("portfolio-store",     "data", allow_duplicate=True),
+    Output("factor-scores-store", "data", allow_duplicate=True),
     Input({"type": "remove-weak-btn", "index": ALL}, "n_clicks"),
-    State("portfolio-store", "data"),
+    State("portfolio-store",     "data"),
+    State("factor-scores-store", "data"),
     prevent_initial_call=True,
 )
-def remove_weak_stock(n_clicks_list, store):
+def remove_weak_stock(n_clicks_list, store, factor_scores):
     if not any(n for n in n_clicks_list if n):
-        return no_update
+        return no_update, no_update
     ticker = ctx.triggered_id["index"]
-    return [r for r in store if r["ticker"] != ticker]
+    new_store = [r for r in store if r["ticker"] != ticker]
+    if new_store:
+        new_store, _ = recalc_weights(new_store)
+    new_scores = [s for s in (factor_scores or []) if s.get("ticker") != ticker]
+    return new_store, new_scores
 
 
 # ── Correlation helpers ─────────────────────────────────────────────────────
