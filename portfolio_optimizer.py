@@ -198,6 +198,20 @@ app.index_string = """<!DOCTYPE html>
         {%scripts%}
         {%renderer%}
     </footer>
+    <script>
+    // Show loading emoji instantly on click — before Dash callbacks fire
+    document.addEventListener("click", function(e) {
+        if (e.target && e.target.id === "refresh-btn") {
+            var el = document.getElementById("loading-emoji-msg");
+            if (el) {
+                el.style.display = "block";
+                el.style.textAlign = "center";
+                el.style.padding = "1.2em 1em 0.4em";
+                el.style.width = "100%";
+            }
+        }
+    });
+    </script>
 </body>
 </html>"""
 
