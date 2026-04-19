@@ -366,7 +366,7 @@ app.layout = html.Div(
 
                 # ── Subtitle ──────────────────────────────────────────────────
                 html.P(
-                    "See exactly which stocks to cut, hold, and add.",
+                    "Portfolio analysis and optimisation for independent investors.",
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
