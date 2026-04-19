@@ -471,19 +471,16 @@ app.layout = html.Div(
                         html.Div(
                             style={"padding": "1.2em 1.8em", "borderBottom": f"1px solid {LGRAY}"},
                             children=[
-                                html.H4("Your Portfolio", style={"color": NAVY, "margin": 0, "display": "inline"}),
-                                html.Span(
+                                html.Div(
                                     id="total-value-badge",
-                                    style={
-                                        "float": "right",
-                                        "background": NAVY,
-                                        "color": CYAN,
-                                        "borderRadius": "999px",
-                                        "padding": "0.25em 1.1em",
-                                        "fontSize": "0.9em",
-                                        "fontWeight": "700",
-                                    },
+                                    style={"color": NAVY, "fontSize": "2em", "fontWeight": "800",
+                                           "letterSpacing": "-0.5px", "lineHeight": "1.1",
+                                           "marginBottom": "0.15em"},
                                 ),
+                                html.H4("Your Portfolio", style={"color": "#888", "margin": 0,
+                                                                   "fontWeight": "500", "fontSize": "0.95em",
+                                                                   "textTransform": "uppercase",
+                                                                   "letterSpacing": "0.06em"}),
                             ],
                         ),
 
@@ -999,7 +996,7 @@ def import_csv(contents, filename, store):
 )
 def render_table(store):
     if not store:
-        badge = "Total: €0"
+        badge = "€0"
         empty_style = {
             "textAlign": "center", "color": "#aaa",
             "padding": "3em", "fontSize": "0.95em", "fontStyle": "italic",
@@ -1007,7 +1004,7 @@ def render_table(store):
         return [], badge, empty_style
 
     total = sum(r["total"] for r in store)
-    badge = f"Total: €{total:,.0f}"
+    badge = f"€{total:,.0f}"
     empty_style = {"display": "none"}
 
     sorted_store = sorted(store, key=lambda r: float(str(r.get("total", 0)).replace(",", "")), reverse=True)
