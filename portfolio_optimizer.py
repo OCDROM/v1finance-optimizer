@@ -366,7 +366,7 @@ app.layout = html.Div(
 
                 # ── Subtitle ──────────────────────────────────────────────────
                 html.P(
-                    "Portfolio analysis and optimisation for independent investors.",
+                    "Portfolio analysis for independent investors.",
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
