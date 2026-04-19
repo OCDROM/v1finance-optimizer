@@ -356,7 +356,7 @@ app.layout = html.Div(
 
                 # ── Subtitle ──────────────────────────────────────────────────
                 html.P(
-                    "Know exactly what to rebalance in your stock portfolio. Import your portfolio from Yahoo Finance to get started.",
+                    "Know exactly what to rebalance in your stock portfolio.",
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
@@ -1877,12 +1877,12 @@ def build_correlation_fig(tickers: list, price_df=None) -> tuple:
     # Annotation text matrix
     text = [[f"{v:.2f}" for v in row] for row in corr.values]
 
-    # Colorscale: cyan (-1→0) → white (0→~0.5) → grey (0.5→1)
+    # Colorscale: -1→0 = flat cyan, 0→+0.5 = cyan→white, +0.5→+1 = white→dark grey
     colorscale = [
-        [0.0,  CYAN],      # -1  → cyan (negative correlation, best diversification)
-        [0.5,  WHITE],     #  0  → white (uncorrelated, neutral)
-        [0.8,  "#8A9BA8"], # +0.6 → light grey (moderate-high, caution)
-        [1.0,  "#2C3E50"], # +1  → dark grey (fully correlated, bad)
+        [0.0,  CYAN],      # -1  → cyan
+        [0.5,  CYAN],      #  0  → cyan (neutral stays cyan)
+        [0.75, WHITE],     # +0.5 → white
+        [1.0,  "#2C3E50"], # +1  → dark grey
     ]
 
     fig = go.Figure(go.Heatmap(
@@ -1891,16 +1891,10 @@ def build_correlation_fig(tickers: list, price_df=None) -> tuple:
         y=labels,
         text=text,
         texttemplate="%{text}",
-        textfont={"size": 13, "color": "#111"},
+        textfont={"size": 10, "color": "#111"},
         colorscale=colorscale,
         zmin=-1, zmax=1,
-        colorbar=dict(
-            title="Correlation",
-            tickvals=[-1, -0.5, 0, 0.5, 1],
-            ticktext=["-1", "-0.5", "0", "0.5", "1"],
-            thickness=14,
-            len=0.8,
-        ),
+        showscale=False,
         hoverongaps=False,
         hovertemplate="%{x} vs %{y}: %{z:.2f}<extra></extra>",
     ))
