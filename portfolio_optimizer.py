@@ -370,7 +370,7 @@ app.layout = html.Div(
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
-                        "fontWeight": "900",
+                        "fontWeight": "800",
                         "letterSpacing": "-0.02em",
                         "lineHeight": "1.35",
                         "textAlign": "center",
@@ -1711,6 +1711,25 @@ def compute_factor_scores_cb(fund_data, price_data):
     prevent_initial_call=True,
 )
 def render_fund_table(tab, rows, factor_scores):
+    # ── Detect total fetch failure ─────────────────────────────────────────────
+    all_failed = bool(rows) and all(r.get("company") == "Fetch error" for r in rows)
+    if all_failed:
+        return html.Div(
+            style={"padding": "2em 0"},
+            children=[
+                html.P(
+                    "⚠️  Yahoo Finance data not available — try later.",
+                    style={"color": AMBER, "fontWeight": "600", "fontSize": "0.95em",
+                           "margin": "0 0 0.4em 0"},
+                ),
+                html.P(
+                    "Markowitz optimisation is still available above "
+                    "(it uses price history only, not fundamentals).",
+                    style={"color": "#9CA3AF", "fontSize": "0.85em", "margin": 0},
+                ),
+            ],
+        )
+
     if tab == "factor_scores":
         if not factor_scores:
             return html.P("Factor scores not yet computed. Click Refresh Analysis.",
