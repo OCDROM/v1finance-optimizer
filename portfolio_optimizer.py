@@ -339,13 +339,9 @@ app.layout = html.Div(
             },
             children=[
                 html.Div([
-                    html.Span("V1 ", style={"color": CYAN, "fontWeight": "800", "fontSize": "1.7em", "letterSpacing": "-0.01em"}),
+                    html.Span("V1 ", style={"color": WHITE, "fontWeight": "800", "fontSize": "1.7em", "letterSpacing": "-0.01em"}),
                     html.Span("Portfolio Optimizer", style={"color": WHITE, "fontWeight": "300", "fontSize": "1.7em"}),
                 ]),
-                html.Span(
-                    "Portfolio Builder & Fundamentals",
-                    style={"color": CYAN, "fontSize": "0.78em", "letterSpacing": "0.14em", "fontWeight": "600", "opacity": "0.85"},
-                ),
             ],
         ),
 
@@ -360,7 +356,7 @@ app.layout = html.Div(
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
-                        "fontWeight": "700",
+                        "fontWeight": "900",
                         "letterSpacing": "-0.02em",
                         "lineHeight": "1.35",
                         "textAlign": "center",
