@@ -1650,7 +1650,7 @@ def _factor_score_cond(col):
 )
 def search_ticker_suggestions(search_value):
     if not search_value or len(search_value.strip()) < 1:
-        return []
+        return no_update  # keep existing options so a selected value is not wiped
     try:
         url = "https://query2.finance.yahoo.com/v1/finance/search"
         params = {"q": search_value.strip(), "quotesCount": 8, "newsCount": 0, "listsCount": 0}
@@ -1668,7 +1668,7 @@ def search_ticker_suggestions(search_value):
                 options.append({"label": label, "value": sym})
         return options
     except Exception:
-        return []
+        return no_update  # on error, leave options as-is
 
 
 # ── Callback: Fetch price history (shared by correlation + frontier) ─────────────
