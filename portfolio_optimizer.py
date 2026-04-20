@@ -403,7 +403,7 @@ app.layout = html.Div(
                                                                 "display": "block", "marginBottom": "4px"}),
                                     dcc.Dropdown(
                                         id="ticker-input",
-                                        placeholder="Search ticker or company\u2026",
+                                        placeholder="Search...",
                                         searchable=True,
                                         clearable=True,
                                         options=[],
@@ -438,12 +438,6 @@ app.layout = html.Div(
                                     style={"color": RED, "fontSize": "0.88em",
                                            "paddingBottom": "6px", "flex": "1"},
                                 ),
-                                # subtle OR divider
-                                html.Span("— OR —",
-                                          style={"color": "#C4CBD6", "fontSize": "0.78em",
-                                                 "fontWeight": "600", "letterSpacing": "0.08em",
-                                                 "alignSelf": "center", "whiteSpace": "nowrap",
-                                                 "paddingBottom": "4px"}),
                                 # push Upload CSV to the far right
                                 html.Div(style={"flex": "1"}),
                                 html.Div([
