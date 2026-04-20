@@ -448,12 +448,6 @@ app.layout = html.Div(
                                         },
                                     ),
                                 ], style={"position": "relative"}),
-                                html.Div(
-                                    id="ticker-hint",
-                                    style={"fontSize": "0.78em", "color": "#9CA3AF",
-                                           "alignSelf": "flex-end", "paddingBottom": "8px"},
-                                    children="Type to search by ticker or company name",
-                                ),
                                 html.Div([
                                     html.Label("Quantity", style={"fontSize": "0.8em", "color": "#888", "display": "block", "marginBottom": "4px"}),
                                     dcc.Input(
