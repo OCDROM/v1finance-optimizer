@@ -199,20 +199,7 @@ app.index_string = """<!DOCTYPE html>
         {%scripts%}
         {%renderer%}
     </footer>
-    <script>
-    // Show loading emoji instantly on click — before Dash callbacks fire
-    document.addEventListener("click", function(e) {
-        if (e.target && e.target.id === "refresh-btn") {
-            var el = document.getElementById("loading-emoji-msg");
-            if (el) {
-                el.style.display = "block";
-                el.style.textAlign = "center";
-                el.style.padding = "1.2em 1em 0.4em";
-                el.style.width = "100%";
-            }
-        }
-    });
-    </script>
+
 </body>
 </html>"""
 
@@ -375,7 +362,7 @@ app.layout = html.Div(
                         "letterSpacing": "-0.02em",
                         "lineHeight": "1.35",
                         "textAlign": "center",
-                        "maxWidth": "780px",
+                        "maxWidth": "800px",
                         "margin": "0.5em auto 2em auto",
                     },
                 ),
@@ -795,57 +782,55 @@ def refresh_trigger(n_clicks, current):
     return (current or 0) + 1
 
 
-# ── Clientside callback: Emoji visibility + button loading state (instant — no server round-trip) ──
+# ── Clientside callback: Emoji visibility + button loading state ───────────────
+# Controlled entirely through Dash outputs — no direct DOM manipulation —
+# to avoid conflicts with React's reconciliation cycle.
+_BTN_NORMAL = {
+    "background": NAVY, "color": WHITE, "border": "none", "borderRadius": "999px",
+    "padding": "0 1.8em", "height": "48px", "fontWeight": "600", "fontSize": "1em",
+    "fontFamily": FONT, "cursor": "pointer", "letterSpacing": "0.03em",
+    "width": "100%", "maxWidth": "380px", "transition": "opacity 0.18s ease, transform 0.12s ease",
+}
+_BTN_LOADING = {
+    **_BTN_NORMAL,
+    "background": "#0a2540", "opacity": "0.72", "cursor": "not-allowed",
+    "animation": "btnPulse 1.2s ease-in-out infinite",
+}
+
 app.clientside_callback(
     """
-    function(n_clicks, frontier_data, fund_data) {
-        var hidden  = {display: "none"};
-        var visible = {display: "block", textAlign: "center",
-                       padding: "1.2em 1em 0.4em", width: "100%"};
+    function(n_clicks, frontier_data, fund_data) {{
+        var no_update = window.dash_clientside.no_update;
+        var hidden    = {{display: "none"}};
+        var visible   = {{display: "block", textAlign: "center",
+                          padding: "1.2em 1em 0.4em", width: "100%"}};
+        var btn_loading = {btn_loading};
+        var btn_normal  = {btn_normal};
 
         var triggered = window.dash_clientside.callback_context.triggered;
         if (!triggered || triggered.length === 0)
-            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+            return [no_update, no_update, no_update, no_update];
 
         var tid = triggered[0].prop_id.split(".")[0];
-        var btn = document.getElementById("refresh-btn");
 
-        if (tid === "refresh-btn") {
-            // Instantly show loading state on the button
-            if (btn) {
-                btn.classList.add("btn-loading");
-                btn.disabled = true;
-                btn.textContent = "⟳ Fetching…";
-            }
-            return [visible, window.dash_clientside.no_update];
-        }
+        if (tid === "refresh-btn") {{
+            return [visible, btn_loading, "\u27f3 Fetching\u2026", true];
+        }}
 
-        // Helper: restore button to normal
-        function restoreBtn() {
-            if (btn) {
-                btn.classList.remove("btn-loading");
-                btn.disabled = false;
-                btn.textContent = "↺ Refresh Analysis";
-            }
-        }
+        if (tid === "frontier-store" || tid === "fundamentals-store") {{
+            return [hidden, btn_normal, "\u21ba Refresh Analysis", false];
+        }}
 
-        // Primary: frontier arrived (last section to finish) — restore regardless of success/failure
-        if (tid === "frontier-store") {
-            restoreBtn();
-            return [hidden, window.dash_clientside.no_update];
-        }
-
-        // Fallback: fundamentals arrived — covers Yahoo Finance errors and <2 holdings
-        if (tid === "fundamentals-store") {
-            restoreBtn();
-            return [hidden, window.dash_clientside.no_update];
-        }
-
-        return [window.dash_clientside.no_update, window.dash_clientside.no_update];
-    }
-    """,
+        return [no_update, no_update, no_update, no_update];
+    }}
+    """.format(
+        btn_loading=str(_BTN_LOADING).replace("'", '"').replace("True", "true").replace("False", "false"),
+        btn_normal=str(_BTN_NORMAL).replace("'", '"').replace("True", "true").replace("False", "false"),
+    ),
     Output("loading-emoji-msg", "style"),
     Output("refresh-btn",       "style"),
+    Output("refresh-btn",       "children"),
+    Output("refresh-btn",       "disabled"),
     Input("refresh-btn",        "n_clicks"),
     Input("frontier-store",     "data"),
     Input("fundamentals-store", "data"),
