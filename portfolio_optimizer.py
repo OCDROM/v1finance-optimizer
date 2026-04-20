@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import os
 import requests
 import dash
@@ -387,7 +388,8 @@ app.layout = html.Div(
                                            style={"color": CYAN, "fontWeight": "700",
                                                   "textDecoration": "none",
                                                   "borderBottom": f"1px solid {CYAN}"}),
-                                ], style={"fontSize": "0.88em", "color": "#888"}),
+                                ], style={"fontSize": "1em", "fontWeight": "700",
+                                          "color": NAVY, "fontFamily": FONT}),
                             ],
                         ),
 
@@ -436,6 +438,12 @@ app.layout = html.Div(
                                     style={"color": RED, "fontSize": "0.88em",
                                            "paddingBottom": "6px", "flex": "1"},
                                 ),
+                                # subtle OR divider
+                                html.Span("— OR —",
+                                          style={"color": "#C4CBD6", "fontSize": "0.78em",
+                                                 "fontWeight": "600", "letterSpacing": "0.08em",
+                                                 "alignSelf": "center", "whiteSpace": "nowrap",
+                                                 "paddingBottom": "4px"}),
                                 # push Upload CSV to the far right
                                 html.Div(style={"flex": "1"}),
                                 html.Div([
@@ -820,8 +828,8 @@ app.clientside_callback(
         return [no_update, no_update, no_update, no_update];
     }}
     """.format(
-        btn_loading=str(_BTN_LOADING).replace("'", '"').replace("True", "true").replace("False", "false"),
-        btn_normal=str(_BTN_NORMAL).replace("'", '"').replace("True", "true").replace("False", "false"),
+        btn_loading=json.dumps(_BTN_LOADING),
+        btn_normal=json.dumps(_BTN_NORMAL),
     ),
     Output("loading-emoji-msg", "style"),
     Output("refresh-btn",       "style"),
