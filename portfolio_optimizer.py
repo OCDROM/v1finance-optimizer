@@ -329,10 +329,10 @@ FUND_COLS = {
 # ── Default portfolio ─────────────────────────────────────────────────────────
 DEFAULT_HOLDINGS = [
     ("CAMB.BR",  25),  ("PARRO.PA", 250), ("AUB.PA",   145), ("SOL.MI",    75),
-    ("VIRP.PA",   6),  ("EXENS.PA",  42), ("RBT.PA",     3), ("BAMNB.AS", 340),
+    ("VIRP.PA",  18),  ("EXENS.PA",  42), ("RBT.PA",     3), ("BAMNB.AS", 340),
     ("FII.PA",   60),  ("MRN.PA",    99), ("FUR.AS",   200), ("ASY.PA",    85),
     ("COFA.PA", 228),  ("HEIJM.AS",  68), ("MAIRE.MI", 320), ("IR5B.IR",  778),
-    ("VU.PA",    12),  ("VLTSA.PA", 665), ("ARIS.MI", 1150), ("SPM.MI",  1030),
+    ("VU.PA",    12),  ("ARIS.MI", 1150), ("SPM.MI",  1030),
     ("LOUP.PA", 129),
 ]
 
