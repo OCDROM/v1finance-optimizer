@@ -829,15 +829,14 @@ app.clientside_callback(
             }
         }
 
-        // Primary: frontier arrived with real data (last section to finish)
-        if (tid === "frontier-store" && frontier_data && frontier_data.valid
-                && frontier_data.valid.length > 0) {
+        // Primary: frontier arrived (last section to finish) — restore regardless of success/failure
+        if (tid === "frontier-store") {
             restoreBtn();
             return [hidden, window.dash_clientside.no_update];
         }
 
-        // Fallback: fundamentals arrived (covers <2 holdings / frontier error / fetch failure)
-        if (tid === "fundamentals-store" && fund_data !== null && fund_data !== undefined) {
+        // Fallback: fundamentals arrived — covers Yahoo Finance errors and <2 holdings
+        if (tid === "fundamentals-store") {
             restoreBtn();
             return [hidden, window.dash_clientside.no_update];
         }
