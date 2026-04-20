@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import os
+import time
 import requests
 import dash
 from dash import dcc, html, dash_table, Input, Output, State, ctx, no_update, ALL
@@ -1208,6 +1209,17 @@ def _fetch_one(ticker: str) -> dict:
         "raw_fcf_growth_1y", "raw_ocf_growth_1y",
     ]}
     EMPTY_TREND = {"trend_op_m": None, "trend_rev": None, "trend_fcf": None, "trend_debt": None}
+    last_err = None
+    for _attempt in range(3):
+        try:
+            return _fetch_one_attempt(ticker, EMPTY_DISP, EMPTY_RAW, EMPTY_TREND)
+        except Exception as e:
+            last_err = e
+            time.sleep(1.5 * (_attempt + 1))  # 1.5s, 3s between retries
+    return {"ticker": ticker, "company": "Fetch error", **EMPTY_DISP, **EMPTY_RAW, **EMPTY_TREND}
+
+
+def _fetch_one_attempt(ticker, EMPTY_DISP, EMPTY_RAW, EMPTY_TREND):
     try:
         t_obj  = yf.Ticker(ticker)
         info   = t_obj.info
@@ -1357,14 +1369,21 @@ def _fetch_one(ticker: str) -> dict:
             **trends,
         }
     except Exception:
-        return {"ticker": ticker, "company": "Fetch error", **EMPTY_DISP, **EMPTY_RAW, **EMPTY_TREND}
+        raise  # let _fetch_one retry handler catch it
 
 
 def fetch_fundamentals(tickers: list) -> list:
-    """Fetch fundamentals + quarterly trends concurrently for all tickers."""
+    """Fetch fundamentals + quarterly trends concurrently for all tickers.
+    Uses 3 workers max and staggers submissions to avoid Yahoo Finance rate limits.
+    """
     results = {}
-    with ThreadPoolExecutor(max_workers=min(len(tickers), 6)) as ex:
-        futures = {ex.submit(_fetch_one, t): t for t in tickers}
+    # Stagger submissions: submit one every 0.25s to spread the burst
+    with ThreadPoolExecutor(max_workers=min(len(tickers), 3)) as ex:
+        futures = {}
+        for i, t in enumerate(tickers):
+            if i > 0:
+                time.sleep(0.25)
+            futures[ex.submit(_fetch_one, t)] = t
         for future in as_completed(futures):
             results[futures[future]] = future.result()
     return [results[t] for t in tickers]
