@@ -764,37 +764,17 @@ _BTN_LOADING = {
 
 app.clientside_callback(
     """
-    function(n_clicks, frontier_data, fund_data) {{
+    function(n_clicks) {{
         var no_update = window.dash_clientside.no_update;
         var btn_loading = {btn_loading};
-        var btn_normal  = {btn_normal};
-
-        var triggered = window.dash_clientside.callback_context.triggered;
-        if (!triggered || triggered.length === 0)
-            return [no_update, no_update, no_update];
-
-        var tid = triggered[0].prop_id.split(".")[0];
-
-        if (tid === "refresh-btn") {{
-            return [btn_loading, "\u27f3 Fetching\u2026", true];
-        }}
-
-        if (tid === "frontier-store" || tid === "fundamentals-store") {{
-            return [btn_normal, "\u21ba Refresh Analysis", false];
-        }}
-
-        return [no_update, no_update, no_update];
+        if (!n_clicks) return [no_update, no_update, no_update];
+        return [btn_loading, "\u27f3 Fetching\u2026", true];
     }}
-    """.format(
-        btn_loading=json.dumps(_BTN_LOADING),
-        btn_normal=json.dumps(_BTN_NORMAL),
-    ),
-    Output("refresh-btn",       "style"),
-    Output("refresh-btn",       "children"),
-    Output("refresh-btn",       "disabled"),
-    Input("refresh-btn",        "n_clicks"),
-    Input("frontier-store",     "data"),
-    Input("fundamentals-store", "data"),
+    """.format(btn_loading=json.dumps(_BTN_LOADING)),
+    Output("refresh-btn", "style"),
+    Output("refresh-btn", "children"),
+    Output("refresh-btn", "disabled"),
+    Input("refresh-btn",  "n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -1651,17 +1631,21 @@ def pull_price_history_cb(trigger, store):
     Output("fundamentals-store",  "data"),
     Output("fund-tab-container",  "style"),
     Output("pull-error-msg",      "children"),
+    Output("refresh-btn",         "style",    allow_duplicate=True),
+    Output("refresh-btn",         "children", allow_duplicate=True),
+    Output("refresh-btn",         "disabled", allow_duplicate=True),
     Input("analyse-trigger",      "data"),
     State("portfolio-store",      "data"),
     prevent_initial_call=True,
 )
 def pull_fundamentals(trigger, store):
+    _label = "\u21ba Refresh Analysis"
     if not trigger or not store:
-        return no_update, no_update, ""
+        return no_update, no_update, "", _BTN_NORMAL, _label, False
 
     tickers = [r["ticker"] for r in store]
     rows    = fetch_fundamentals(tickers)
-    return rows, {"display": "block"}, ""
+    return rows, {"display": "block"}, "", _BTN_NORMAL, _label, False
 
 
 # ── Callback: Compute 5-factor scores ─────────────────────────────────────────────
