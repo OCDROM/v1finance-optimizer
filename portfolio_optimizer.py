@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import requests
 import dash
 from dash import dcc, html, dash_table, Input, Output, State, ctx, no_update, ALL
 import yfinance as yf
@@ -370,7 +371,7 @@ app.layout = html.Div(
                     style={
                         "color": NAVY,
                         "fontSize": "2em",
-                        "fontWeight": "800",
+                        "fontWeight": "n a00",
                         "letterSpacing": "-0.02em",
                         "lineHeight": "1.35",
                         "textAlign": "center",
@@ -432,15 +433,27 @@ app.layout = html.Div(
                             children=[
                                 html.Div([
                                     html.Label("Ticker", style={"fontSize": "0.8em", "color": "#888", "display": "block", "marginBottom": "4px"}),
-                                    dcc.Input(
+                                    dcc.Dropdown(
                                         id="ticker-input",
-                                        type="text",
-                                        placeholder="e.g. AAPL",
-                                        debounce=False,
-                                        style={**INPUT_STYLE, "width": "150px", "textTransform": "uppercase"},
-                                        maxLength=10,
+                                        placeholder="Search ticker or company…",
+                                        searchable=True,
+                                        clearable=True,
+                                        options=[],
+                                        style={
+                                            **INPUT_STYLE,
+                                            "width": "260px",
+                                            "height": "auto",
+                                            "padding": "0",
+                                            "border": "none",
+                                        },
                                     ),
-                                ]),
+                                ], style={"position": "relative"}),
+                                html.Div(
+                                    id="ticker-hint",
+                                    style={"fontSize": "0.78em", "color": "#9CA3AF",
+                                           "alignSelf": "flex-end", "paddingBottom": "8px"},
+                                    children="Type to search by ticker or company name",
+                                ),
                                 html.Div([
                                     html.Label("Quantity", style={"fontSize": "0.8em", "color": "#888", "display": "block", "marginBottom": "4px"}),
                                     dcc.Input(
@@ -829,8 +842,8 @@ app.clientside_callback(
             return [hidden, window.dash_clientside.no_update];
         }
 
-        // Fallback: fundamentals arrived (covers <2 holdings / frontier error)
-        if (tid === "fundamentals-store" && fund_data && fund_data.length > 0) {
+        // Fallback: fundamentals arrived (covers <2 holdings / frontier error / fetch failure)
+        if (tid === "fundamentals-store" && fund_data !== null && fund_data !== undefined) {
             restoreBtn();
             return [hidden, window.dash_clientside.no_update];
         }
@@ -852,6 +865,7 @@ app.clientside_callback(
     Output("portfolio-store", "data"),
     Output("error-msg", "children"),
     Output("ticker-input", "value"),
+    Output("ticker-input", "options", allow_duplicate=True),
     Output("qty-input", "value"),
     Input("add-btn", "n_clicks"),
     Input("portfolio-table", "data"),
@@ -866,7 +880,7 @@ def update_store(n_clicks, table_data, ticker, qty, store):
     # ── Row deleted via DataTable ────────────────────────────────────────────
     if triggered == "portfolio-table":
         if table_data is None:
-            return [], no_update, no_update, no_update
+            return [], no_update, no_update, no_update, no_update
         # Re-sync store with current table (preserving raw numeric totals)
         synced = []
         for row in table_data:
@@ -875,25 +889,25 @@ def update_store(n_clicks, table_data, ticker, qty, store):
             except Exception:
                 synced.append(row)
         synced, _ = recalc_weights(synced)
-        return synced, "", no_update, no_update
+        return synced, "", no_update, no_update, no_update
 
     # ── Add button ────────────────────────────────────────────────────────────
     if triggered == "add-btn":
-        if not ticker or not ticker.strip():
-            return store, "Please enter a ticker symbol.", no_update, no_update
+        if not ticker or not str(ticker).strip():
+            return store, "Please enter a ticker symbol.", no_update, no_update, no_update
         if not qty or float(qty) <= 0:
-            return store, "Please enter a quantity greater than 0.", no_update, no_update
+            return store, "Please enter a quantity greater than 0.", no_update, no_update, no_update
 
-        ticker = ticker.strip().upper()
+        ticker = str(ticker).strip().upper()
 
         # Prevent duplicates
         if any(r["ticker"] == ticker for r in store):
-            return store, f"{ticker} is already in your portfolio.", no_update, no_update
+            return store, f"{ticker} is already in your portfolio.", no_update, no_update, no_update
 
         try:
             name, price = fetch_ticker_data(ticker)
         except Exception as e:
-            return store, str(e), no_update, no_update
+            return store, str(e), no_update, no_update, no_update
 
         total = round(float(qty) * price, 2)
         new_row = {
@@ -906,9 +920,9 @@ def update_store(n_clicks, table_data, ticker, qty, store):
         }
         updated = store + [new_row]
         updated, _ = recalc_weights(updated)
-        return updated, "", "", None   # clear inputs on success
+        return updated, "", None, [], None   # clear inputs on success
 
-    return store, "", no_update, no_update
+    return store, "", no_update, no_update, no_update
 
 
 # ── Callback: CSV upload → populate store ─────────────────────────────────────
@@ -1646,6 +1660,35 @@ def _factor_score_cond(col):
     ]
 
 
+# ── Callback: Ticker search suggestions (Yahoo Finance autocomplete) ─────────────
+@app.callback(
+    Output("ticker-input", "options"),
+    Input("ticker-input", "search_value"),
+    prevent_initial_call=True,
+)
+def search_ticker_suggestions(search_value):
+    if not search_value or len(search_value.strip()) < 1:
+        return []
+    try:
+        url = "https://query2.finance.yahoo.com/v1/finance/search"
+        params = {"q": search_value.strip(), "quotesCount": 8, "newsCount": 0, "listsCount": 0}
+        resp = requests.get(url, params=params, timeout=5,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        quotes = resp.json().get("quotes", [])
+        options = []
+        for q in quotes:
+            sym = q.get("symbol", "")
+            name = q.get("shortname") or q.get("longname") or ""
+            qtype = q.get("quoteType", "")
+            if sym and qtype in ("EQUITY", "ETF", "MUTUALFUND"):
+                label = f"{sym} — {name}" if name else sym
+                options.append({"label": label, "value": sym})
+        return options
+    except Exception:
+        return []
+
+
 # ── Callback: Fetch price history (shared by correlation + frontier) ─────────────
 @app.callback(
     Output("price-history-store", "data"),
@@ -1723,7 +1766,7 @@ def render_fund_table(tab, rows, factor_scores):
                            "margin": "0 0 0.4em 0"},
                 ),
                 html.P(
-                    "Markowitz optimisation is still available above "
+                    "Markowitz optimisation is still available below "
                     "(it uses price history only, not fundamentals).",
                     style={"color": "#9CA3AF", "fontSize": "0.85em", "margin": 0},
                 ),
@@ -2015,6 +2058,9 @@ def build_correlation_fig(tickers: list, price_df=None) -> tuple:
 def run_sector_pies(fund_data, store):
     if not fund_data or not store:
         return no_update
+    # Don't render if Yahoo Finance fetch failed for all tickers
+    if all(r.get("company") == "Fetch error" for r in fund_data):
+        return []
     val_map   = {r["ticker"]: float(str(r.get("total", 0)).replace(",", "")) for r in store}
     total_val = sum(val_map.values())
     if total_val == 0:
