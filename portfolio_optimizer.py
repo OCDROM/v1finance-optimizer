@@ -1215,7 +1215,7 @@ def _fetch_one(ticker: str) -> dict:
             return _fetch_one_attempt(ticker, EMPTY_DISP, EMPTY_RAW, EMPTY_TREND)
         except Exception as e:
             last_err = e
-            time.sleep(1.5 * (_attempt + 1))  # 1.5s, 3s between retries
+            time.sleep(0.5 * (_attempt + 1))  # 0.5s, 1s between retries
     return {"ticker": ticker, "company": "Fetch error", **EMPTY_DISP, **EMPTY_RAW, **EMPTY_TREND}
 
 
@@ -1374,16 +1374,11 @@ def _fetch_one_attempt(ticker, EMPTY_DISP, EMPTY_RAW, EMPTY_TREND):
 
 def fetch_fundamentals(tickers: list) -> list:
     """Fetch fundamentals + quarterly trends concurrently for all tickers.
-    Uses 3 workers max and staggers submissions to avoid Yahoo Finance rate limits.
+    Uses 3 workers max to avoid Yahoo Finance rate limits.
     """
     results = {}
-    # Stagger submissions: submit one every 0.25s to spread the burst
     with ThreadPoolExecutor(max_workers=min(len(tickers), 3)) as ex:
-        futures = {}
-        for i, t in enumerate(tickers):
-            if i > 0:
-                time.sleep(0.25)
-            futures[ex.submit(_fetch_one, t)] = t
+        futures = {ex.submit(_fetch_one, t): t for t in tickers}
         for future in as_completed(futures):
             results[futures[future]] = future.result()
     return [results[t] for t in tickers]
