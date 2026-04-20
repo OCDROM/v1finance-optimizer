@@ -409,7 +409,7 @@ app.layout = html.Div(
                                         options=[],
                                         style={
                                             **INPUT_STYLE,
-                                            "width": "260px",
+                                            "width": "180px",
                                             "height": "auto",
                                             "padding": "0",
                                             "border": "none",
@@ -424,7 +424,7 @@ app.layout = html.Div(
                                         type="number",
                                         placeholder="e.g. 10",
                                         min=0,
-                                        style={**INPUT_STYLE, "width": "130px"},
+                                        style={**INPUT_STYLE, "width": "95px"},
                                     ),
                                 ]),
                                 html.Button(
