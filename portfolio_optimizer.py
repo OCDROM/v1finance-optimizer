@@ -367,54 +367,14 @@ app.layout = html.Div(
                     },
                 ),
 
-                # ── Yahoo Finance CSV import ───────────────────────────────────
+                # ── Build Your Portfolio card (manual add + CSV import) ────────
                 html.Div(
-                    style={
-                        **CARD_STYLE,
-                        "marginBottom": "1.2em",
-                        "display": "flex",
-                        "alignItems": "center",
-                        "gap": "1.2em",
-                        "flexWrap": "wrap",
-                    },
+                    style={**CARD_STYLE, "marginBottom": "2em"},
                     children=[
-                        html.Div([
-                            html.Span([
-                                "Import from ",
-                                html.A("Yahoo Finance",
-                                       href="https://finance.yahoo.com/portfolios",
-                                       target="_blank",
-                                       style={"color": CYAN, "fontWeight": "700",
-                                              "textDecoration": "none",
-                                              "borderBottom": f"1px solid {CYAN}"}),
-                            ], style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
-                            html.Span(
-                                " — on Yahoo Finance go to Portfolio → Download, then upload the CSV.",
-                                style={"color": "#888", "fontSize": "0.85em"},
-                            ),
-                        ], style={"flex": "1", "minWidth": "240px"}),
-                        dcc.Upload(
-                            id="csv-upload",
-                            children=html.Button(
-                                "Upload CSV",
-                                style={**BTN_STYLE, "background": NAVY},
-                            ),
-                            accept=".csv",
-                            multiple=False,
-                        ),
-                        html.Div(id="csv-error-msg", style={"color": RED, "fontSize": "0.88em"}),
-                    ],
-                ),
+                        html.H4("Build Your Portfolio",
+                                style={"color": NAVY, "marginTop": 0, "marginBottom": "1em"}),
 
-                # ── Add ticker row ────────────────────────────────────────────
-                html.Div(
-                    style={
-                        **CARD_STYLE,
-                        "marginBottom": "2em",
-                    },
-                    children=[
-                        html.H4("Add a Holding", style={"color": NAVY, "marginTop": 0, "marginBottom": "1em"}),
-
+                        # ── Manual add row ───────────────────────────────────
                         html.Div(
                             style={"display": "flex", "gap": "1em", "alignItems": "center", "flexWrap": "wrap"},
                             children=[
@@ -458,6 +418,55 @@ app.layout = html.Div(
                                     id="error-msg",
                                     style={"color": RED, "fontSize": "0.88em", "alignSelf": "flex-end", "paddingBottom": "6px"},
                                 ),
+                            ],
+                        ),
+
+                        # ── "or import" divider ──────────────────────────────
+                        html.Div(
+                            style={"display": "flex", "alignItems": "center",
+                                   "gap": "0.8em", "margin": "1.2em 0"},
+                            children=[
+                                html.Hr(style={"flex": "1", "border": "none",
+                                               "borderTop": f"1px solid {LGRAY}", "margin": 0}),
+                                html.Span("or import", style={"color": "#9CA3AF",
+                                                               "fontSize": "0.8em",
+                                                               "whiteSpace": "nowrap"}),
+                                html.Hr(style={"flex": "1", "border": "none",
+                                               "borderTop": f"1px solid {LGRAY}", "margin": 0}),
+                            ],
+                        ),
+
+                        # ── CSV import row ───────────────────────────────────
+                        html.Div(
+                            style={"display": "flex", "alignItems": "center",
+                                   "gap": "1.2em", "flexWrap": "wrap"},
+                            children=[
+                                html.Div([
+                                    html.Span([
+                                        "Import from ",
+                                        html.A("Yahoo Finance",
+                                               href="https://finance.yahoo.com/portfolios",
+                                               target="_blank",
+                                               style={"color": CYAN, "fontWeight": "700",
+                                                      "textDecoration": "none",
+                                                      "borderBottom": f"1px solid {CYAN}"}),
+                                    ], style={"fontWeight": "700", "color": NAVY, "fontSize": "0.97em"}),
+                                    html.Span(
+                                        " — on Yahoo Finance go to Portfolio → Download, then upload the CSV.",
+                                        style={"color": "#888", "fontSize": "0.85em"},
+                                    ),
+                                ], style={"flex": "1", "minWidth": "240px"}),
+                                dcc.Upload(
+                                    id="csv-upload",
+                                    children=html.Button(
+                                        "Upload CSV",
+                                        style={**BTN_STYLE, "background": NAVY},
+                                    ),
+                                    accept=".csv",
+                                    multiple=False,
+                                ),
+                                html.Div(id="csv-error-msg",
+                                         style={"color": RED, "fontSize": "0.88em"}),
                             ],
                         ),
                     ],
