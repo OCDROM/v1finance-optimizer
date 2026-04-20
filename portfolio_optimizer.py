@@ -58,11 +58,6 @@ app.index_string = """<!DOCTYPE html>
         *, *::before, *::after { box-sizing: border-box; }
         body { margin: 0; -webkit-font-smoothing: antialiased; overscroll-behavior-y: none; }
 
-        /* ── Emoji loading cycle ─────────────────────────────────────── */
-        @keyframes emojiPop {
-            0%,100% { opacity:0; transform:scale(0.7) translateY(6px); }
-            15%,75% { opacity:1; transform:scale(1)   translateY(0);   }
-        }
         #refresh-btn:active { transform: scale(0.97); opacity: 0.85; }
         #refresh-btn.btn-loading { background: #0a2540 !important; opacity: 0.72;
             cursor: not-allowed; animation: btnPulse 1.2s ease-in-out infinite; }
@@ -70,18 +65,6 @@ app.index_string = """<!DOCTYPE html>
             0%,100% { box-shadow: 0 0 0 0 rgba(0,212,229,0.0); }
             50%      { box-shadow: 0 0 0 8px rgba(0,212,229,0.22); }
         }
-        .emoji-cycle { display:flex; gap:0.6em; justify-content:center;
-                        font-size:2em; margin:0.4em 0; }
-        .emoji-cycle span { opacity:0; animation:emojiPop 4.8s infinite ease-in-out; }
-        .emoji-cycle span:nth-child(1) { animation-delay:0.0s; }
-        .emoji-cycle span:nth-child(2) { animation-delay:0.6s; }
-        .emoji-cycle span:nth-child(3) { animation-delay:1.2s; }
-        .emoji-cycle span:nth-child(4) { animation-delay:1.8s; }
-        .emoji-cycle span:nth-child(5) { animation-delay:2.4s; }
-        .emoji-cycle span:nth-child(6) { animation-delay:3.0s; }
-        .emoji-cycle span:nth-child(7) { animation-delay:3.6s; }
-        .emoji-cycle span:nth-child(8) { animation-delay:4.2s; }
-
         /* ── Scroll-reveal animations ──────────────────────────────── */
         @keyframes fadeUp {
             from { opacity: 0; transform: translateY(18px); }
@@ -545,22 +528,6 @@ app.layout = html.Div(
                                    "maxWidth": "380px", "height": "48px", "fontSize": "1em"},
                         ),
                         html.Div(id="pull-error-msg", style={"color": RED, "fontSize": "0.85em", "textAlign": "center"}),
-                        # ── Emoji loading message ──────────────────────────────
-                        html.Div(
-                            id="loading-emoji-msg",
-                            style={"display": "none", "textAlign": "center",
-                                   "padding": "1.2em 1em 0.4em", "width": "100%"},
-                            children=[
-                                html.Div(className="emoji-cycle", children=[
-                                    html.Span("📊"), html.Span("📈"), html.Span("🔍"),
-                                    html.Span("💹"), html.Span("⚖️"), html.Span("💰"),
-                                    html.Span("🎯"), html.Span("🧮"),
-                                ]),
-                                html.P("Fetching live data from Yahoo Finance…",
-                                       style={"color": "#9CA3AF", "fontSize": "0.88em",
-                                              "marginTop": "0.5em", "fontStyle": "italic"}),
-                            ],
-                        ),
                     ],
                 ),
             ],
@@ -799,33 +766,29 @@ app.clientside_callback(
     """
     function(n_clicks, frontier_data, fund_data) {{
         var no_update = window.dash_clientside.no_update;
-        var hidden    = {{display: "none"}};
-        var visible   = {{display: "block", textAlign: "center",
-                          padding: "1.2em 1em 0.4em", width: "100%"}};
         var btn_loading = {btn_loading};
         var btn_normal  = {btn_normal};
 
         var triggered = window.dash_clientside.callback_context.triggered;
         if (!triggered || triggered.length === 0)
-            return [no_update, no_update, no_update, no_update];
+            return [no_update, no_update, no_update];
 
         var tid = triggered[0].prop_id.split(".")[0];
 
         if (tid === "refresh-btn") {{
-            return [visible, btn_loading, "\u27f3 Fetching\u2026", true];
+            return [btn_loading, "\u27f3 Fetching\u2026", true];
         }}
 
         if (tid === "frontier-store" || tid === "fundamentals-store") {{
-            return [hidden, btn_normal, "\u21ba Refresh Analysis", false];
+            return [btn_normal, "\u21ba Refresh Analysis", false];
         }}
 
-        return [no_update, no_update, no_update, no_update];
+        return [no_update, no_update, no_update];
     }}
     """.format(
         btn_loading=json.dumps(_BTN_LOADING),
         btn_normal=json.dumps(_BTN_NORMAL),
     ),
-    Output("loading-emoji-msg", "style"),
     Output("refresh-btn",       "style"),
     Output("refresh-btn",       "children"),
     Output("refresh-btn",       "disabled"),
