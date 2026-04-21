@@ -107,34 +107,57 @@ def _holdings_from_trades(csv_text: str) -> dict:
 
 
 def _fetch_live_value() -> tuple:
-    """Return (total_eur, errors, holdings_count)."""
+    """Return (total_eur, errors, holdings_count).
+    Uses yf.download for a single batch request (much faster than per-ticker calls).
+    """
     resp = requests.get(_TRADES_CSV_URL, timeout=15)
     resp.raise_for_status()
     holdings = _holdings_from_trades(resp.text)
     if not holdings:
         return 0.0, [], 0
 
-    def _price_contrib(yf_ticker: str, qty: float):
-        try:
-            price = getattr(yf.Ticker(yf_ticker).fast_info, "last_price", None)
-            if price:
-                return yf_ticker, float(price) * qty
-        except Exception:
-            pass
-        return yf_ticker, None
+    tickers = list(holdings.keys())
+    prices: dict = {}
 
-    results: dict = {}
-    errors: list = []
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        futures = [ex.submit(_price_contrib, t, q) for t, q in holdings.items()]
-        for f in as_completed(futures):
-            ticker, contrib = f.result()
-            if contrib is not None:
-                results[ticker] = contrib
+    # ── Batch download: one HTTP round-trip for all tickers ───────────────────
+    try:
+        raw = yf.download(
+            tickers if len(tickers) > 1 else tickers[0],
+            period="2d", progress=False, auto_adjust=True,
+        )
+        if not raw.empty:
+            close = raw["Close"]
+            if hasattr(close, "columns"):
+                # Multi-ticker: Close is a DataFrame keyed by ticker symbol
+                for t in tickers:
+                    if t in close.columns:
+                        col = close[t].dropna()
+                        if not col.empty:
+                            prices[t] = float(col.iloc[-1])
             else:
-                errors.append(ticker)
+                # Single-ticker: Close is a Series
+                if len(tickers) == 1 and not close.dropna().empty:
+                    prices[tickers[0]] = float(close.dropna().iloc[-1])
+    except Exception:
+        pass
 
-    return round(sum(results.values()), 2), errors, len(holdings)
+    # ── Per-ticker fallback for anything the batch missed ─────────────────────
+    missed = [t for t in tickers if t not in prices]
+    if missed:
+        def _single(t):
+            try:
+                p = getattr(yf.Ticker(t).fast_info, "last_price", None)
+                return t, float(p) if p else None
+            except Exception:
+                return t, None
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for t, p in ex.map(_single, missed):
+                if p:
+                    prices[t] = p
+
+    errors = [t for t in tickers if t not in prices]
+    total = sum(prices.get(t, 0) * holdings[t] for t in tickers)
+    return round(total, 2), errors, len(holdings)
 
 
 @server.route("/live-value")
