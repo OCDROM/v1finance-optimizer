@@ -179,6 +179,170 @@ def live_value():
     resp.headers["Access-Control-Allow-Origin"] = "https://v1finance.fr"
     return resp
 
+
+# ── /widget — server-rendered iframe page (bypasses WordPress CSP) ────────────
+import csv as _csv
+from io import StringIO as _StringIO
+from datetime import datetime as _datetime, date as _date
+
+_PERF_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vSCvaSWa_1nD-uymTDlxwvGHGTeWV-9W7dg1hEhfFdGJcJV4ll11JsY2_8bsTkea3GdqZip5ML3rRsS"
+    "/pub?gid=0&single=true&output=csv"
+)
+_widget_cache: dict = {"html": None, "ts": 0.0}
+
+
+def _parse_perf_date(s: str):
+    s = s.strip()
+    for fmt in ("%m/%d/%Y", "%d-%b-%y", "%d-%b-%Y"):
+        try:
+            return _datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _xirr_py(cashflows: list):
+    """cashflows: [(date, amount), ...] oldest-first. Returns annual rate."""
+    if len(cashflows) < 2:
+        return None
+    d0 = cashflows[0][0]
+    r = 0.1
+    for _ in range(300):
+        f = df = 0.0
+        for d, cf in cashflows:
+            t = (d - d0).days / 365.0
+            v = (1 + r) ** t
+            f  += cf / v
+            df -= t * cf / (v * (1 + r))
+        if df == 0:
+            break
+        dx = f / df
+        r -= dx
+        if abs(dx) < 1e-8:
+            break
+    return r
+
+
+def _build_widget_html() -> str:
+    MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+    def num(s):
+        try:
+            return float(str(s).replace(',', '').replace('€', '').replace('%', '').strip())
+        except Exception:
+            return 0.0
+
+    def fmt_eur(n):
+        return f'€{round(n):,}' if n is not None else '—'
+
+    def fmt_date(dt):
+        return f'{dt.day} {MONTHS[dt.month-1]} {dt.year}' if dt else '—'
+
+    # Fetch performance CSV
+    resp = requests.get(_PERF_CSV_URL, timeout=12)
+    resp.raise_for_status()
+    rows = list(_csv.reader(_StringIO(resp.text)))[1:]   # skip header
+    if not rows:
+        raise ValueError("Empty performance CSV")
+
+    latest  = rows[0]
+    csv_val  = num(latest[1])
+    net_inv  = num(latest[2])
+    cum_gain = num(latest[7])
+    csv_date = _parse_perf_date(latest[0])
+
+    # Try live prices (best-effort — falls back to CSV value if it fails)
+    live_val = None
+    try:
+        lv, _, _ = _fetch_live_value()
+        if lv and lv > 0:
+            live_val = lv
+    except Exception:
+        pass
+
+    if live_val:
+        term_val     = live_val
+        term_date    = _date.today()
+        is_live      = True
+        display_gain = live_val - net_inv
+    else:
+        term_val     = csv_val
+        term_date    = csv_date
+        is_live      = False
+        display_gain = cum_gain
+
+    # XIRR — oldest-first
+    cfs = []
+    for row in reversed(rows):
+        if len(row) < 4:
+            continue
+        flow = num(row[3])
+        dt   = _parse_perf_date(row[0])
+        if dt is None:
+            continue
+        if flow != 0:
+            cfs.append((dt, -flow))
+    if term_val > 0 and term_date:
+        cfs.append((term_date, term_val))
+
+    xirr_rate = _xirr_py(cfs) if len(cfs) >= 2 else None
+    xirr_str  = f'{xirr_rate * 100:.1f}%' if xirr_rate is not None else '—'
+
+    gain_sign = '+' if display_gain >= 0 else ''
+    live_dot  = '<span class="dot"></span>' if is_live else ''
+
+    return f'''<!DOCTYPE html><html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{height:100%}}
+body{{background:linear-gradient(135deg,#0E3254 0%,#1a4a7a 100%);font-family:'Inter','Segoe UI',Arial,sans-serif;color:#fff;padding:2.4em 2em;text-align:center}}
+.inner{{max-width:680px;margin:0 auto}}
+.lbl{{font-size:.7em;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#00D4E5;margin-bottom:.9em}}
+.val{{font-size:2.8em;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;justify-content:center;gap:.3em;margin-bottom:.3em}}
+.gain{{font-size:.88em;color:rgba(255,255,255,.6);margin-bottom:1.8em}}
+.metrics{{display:flex;justify-content:center;flex-wrap:wrap;gap:2.5em;border-top:1px solid rgba(255,255,255,.15);padding-top:1.4em}}
+.ml{{font-size:.63em;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);margin-bottom:.35em}}
+.mv{{font-size:1em;font-weight:700}}
+.dot{{display:inline-block;width:9px;height:9px;border-radius:50%;background:#059669;flex-shrink:0;animation:bk 2s ease-in-out infinite}}
+@keyframes bk{{0%,100%{{opacity:1}}50%{{opacity:.35}}}}
+@media(max-width:460px){{.val{{font-size:2em}}}}
+</style></head>
+<body><div class="inner">
+  <div class="lbl">V1 Portfolio &mdash; Live Snapshot</div>
+  <div class="val">{live_dot}{fmt_eur(term_val)}</div>
+  <div class="gain">{gain_sign}{fmt_eur(display_gain)} cumulative gains</div>
+  <div class="metrics">
+    <div><div class="ml">Annualized Return</div><div class="mv">{xirr_str}</div></div>
+    <div><div class="ml">Net Invested</div><div class="mv">{fmt_eur(net_inv)}</div></div>
+    <div><div class="ml">As Of</div><div class="mv">{fmt_date(term_date)}</div></div>
+  </div>
+</div></body></html>'''
+
+
+@server.route("/widget")
+def widget_page():
+    from flask import Response
+    now = time.time()
+    if _widget_cache["html"] and (now - _widget_cache["ts"]) < _LIVE_TTL:
+        resp = Response(_widget_cache["html"], mimetype="text/html")
+        resp.headers["Content-Security-Policy"] = "frame-ancestors https://v1finance.fr"
+        return resp
+    try:
+        html = _build_widget_html()
+        _widget_cache["html"] = html
+        _widget_cache["ts"]   = now
+    except Exception as e:
+        html = f'<html><body style="background:#0E3254;color:rgba(255,255,255,.4);font-family:sans-serif;padding:2em;text-align:center">Data unavailable</body></html>'
+    resp = Response(html, mimetype="text/html")
+    resp.headers["Content-Security-Policy"] = "frame-ancestors https://v1finance.fr"
+    return resp
+
+
 # ── Custom HTML shell: Inter font + CSS design system ─────────────────────────
 app.index_string = """<!DOCTYPE html>
 <html>
