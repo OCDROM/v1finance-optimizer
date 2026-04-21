@@ -43,6 +43,119 @@ server = app.server  # exposed for gunicorn
 def ping():
     return "ok", 200
 
+# ── Google Finance → Yahoo Finance ticker mapping ─────────────────────────────
+_GF_TO_YF = {
+    "PARRO":      "PARRO.PA",
+    "BIT:ARIS":   "ARIS.MI",
+    "FRA:LC4":    "LOUP.PA",    # confirmed: LOUP.PA on Yahoo Finance
+    "EPA:VU":     "VU.PA",
+    "FRA:IR5B":   "IR5B.IR",
+    "EPA:COFA":   "COFA.PA",
+    "AMS:HEIJM":  "HEIJM.AS",
+    "BIT:MAIRE":  "MAIRE.MI",
+    "BIT:SOL":    "SOL.MI",
+    "EPA:ASY":    "ASY.PA",
+    "BIT:SPM":    "SPM.MI",
+    "AMS:FUR":    "FUR.AS",
+    "EPA:MRN":    "MRN.PA",
+    "AMS:BAMNB":  "BAMNB.AS",
+    "EPA:EXENS":  "EXENS.PA",
+    "EPA:FII":    "FII.PA",
+    "EPA:RBT":    "RBT.PA",
+    "EPA:VIRP":   "VIRP.PA",
+    "EPA:AUB":    "AUB.PA",
+    "EBR:CAMB":   "CAMB.BR",
+    "EPA:VLTSA":  "VLTSA.PA",   # sold — filtered out when cumulative units = 0
+}
+
+_TRADES_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vT-6dbEcY7oBpu4pMlHQp7iWTKw_VTrf4M3uBo2nTUBo-FaQlcLO5LoAq3V-IuTGJXBWh0NqZuJGa0b"
+    "/pub?gid=1007960933&single=true&output=csv"
+)
+
+_live_cache: dict = {"payload": None, "ts": 0.0}
+_LIVE_TTL = 300  # seconds (5 minutes)
+
+
+def _holdings_from_trades(csv_text: str) -> dict:
+    """Parse Trades CSV → {yf_ticker: cumulative_units} for open positions only."""
+    latest: dict = {}
+    for line in csv_text.strip().splitlines()[1:]:   # skip header row
+        cols = line.split(",")
+        if len(cols) < 11:
+            continue
+        direction = cols[1].strip()
+        if direction not in ("BUY", "SELL"):
+            continue
+        gf_ticker = cols[2].strip()
+        try:
+            cum_units = float(cols[10].replace(",", "").strip())
+        except ValueError:
+            continue
+        latest[gf_ticker] = cum_units   # last row per ticker = current position
+
+    holdings = {}
+    for gf_ticker, units in latest.items():
+        if units <= 0:
+            continue
+        yf_ticker = _GF_TO_YF.get(gf_ticker)
+        if not yf_ticker:
+            continue
+        holdings[yf_ticker] = units
+    return holdings
+
+
+def _fetch_live_value() -> tuple:
+    """Return (total_eur, errors, holdings_count)."""
+    resp = requests.get(_TRADES_CSV_URL, timeout=15)
+    resp.raise_for_status()
+    holdings = _holdings_from_trades(resp.text)
+    if not holdings:
+        return 0.0, [], 0
+
+    def _price_contrib(yf_ticker: str, qty: float):
+        try:
+            price = getattr(yf.Ticker(yf_ticker).fast_info, "last_price", None)
+            if price:
+                return yf_ticker, float(price) * qty
+        except Exception:
+            pass
+        return yf_ticker, None
+
+    results: dict = {}
+    errors: list = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = [ex.submit(_price_contrib, t, q) for t, q in holdings.items()]
+        for f in as_completed(futures):
+            ticker, contrib = f.result()
+            if contrib is not None:
+                results[ticker] = contrib
+            else:
+                errors.append(ticker)
+
+    return round(sum(results.values()), 2), errors, len(holdings)
+
+
+@server.route("/live-value")
+def live_value():
+    from flask import jsonify
+    now = time.time()
+    if _live_cache["payload"] and (now - _live_cache["ts"]) < _LIVE_TTL:
+        resp = jsonify(_live_cache["payload"])
+        resp.headers["Access-Control-Allow-Origin"] = "https://v1finance.fr"
+        return resp
+    try:
+        value, errors, n = _fetch_live_value()
+        payload = {"value": value, "errors": errors, "holdings_count": n, "cached_at": int(now)}
+        _live_cache["payload"] = payload
+        _live_cache["ts"] = now
+    except Exception as e:
+        payload = {"value": None, "error": str(e)}
+    resp = jsonify(payload)
+    resp.headers["Access-Control-Allow-Origin"] = "https://v1finance.fr"
+    return resp
+
 # ── Custom HTML shell: Inter font + CSS design system ─────────────────────────
 app.index_string = """<!DOCTYPE html>
 <html>
